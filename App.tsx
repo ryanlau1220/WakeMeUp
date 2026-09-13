@@ -19,7 +19,6 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { requestAgentWakePlan, sendTelegramEscalation } from './src/api/agentClient';
 import { CalendarList } from './src/components/CalendarList';
-import { DemoModeCard } from './src/components/DemoModeCard';
 import { VerificationActiveCard } from './src/components/VerificationActiveCard';
 import { WakePlanCard } from './src/components/WakePlanCard';
 import { WakeReadinessCard } from './src/components/WakeReadinessCard';
@@ -41,15 +40,14 @@ const defaultWakeSettings: WakeSettings = {
   telegramEscalationEnabled: false,
 };
 
-type AppTab = 'home' | 'alarms' | 'recent' | 'settings' | 'demo';
-type TabIconName = 'history' | 'alarm' | 'home' | 'settings' | 'demo';
+type AppTab = 'home' | 'alarms' | 'recent' | 'settings';
+type TabIconName = 'history' | 'alarm' | 'home' | 'settings';
 
 const tabs: { id: AppTab; label: string; icon: TabIconName }[] = [
   { id: 'recent', label: 'Recent', icon: 'history' },
   { id: 'alarms', label: 'Alarms', icon: 'alarm' },
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
-  { id: 'demo', label: 'Demo', icon: 'demo' },
 ];
 
 function FooterIcon({ icon, active }: { icon: TabIconName; active: boolean }) {
@@ -78,14 +76,6 @@ function FooterIcon({ icon, active }: { icon: TabIconName; active: boolean }) {
       </View>
     );
   }
-  if (icon === 'demo') {
-    return (
-      <View style={[styles.demoIcon, { borderColor: color }]}>
-        <View style={[styles.demoPlay, { borderLeftColor: color }]} />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.clockIcon}>
       <View style={[styles.clockFace, { borderColor: color }]}>
@@ -469,21 +459,6 @@ function WakeMeUpApp() {
     }
   };
 
-  const handleTriggerDemo = async () => {
-    const delaySeconds = 5;
-    try {
-      if (!(await ensureAlarmPermissions())) return;
-      await Bridge.triggerDemoAlarm(delaySeconds);
-      Alert.alert(
-        'Demo Alarm Armed',
-        `Alarm scheduled in ${delaySeconds} seconds.\n\n👉 LOCK YOUR PHONE SCREEN NOW to test the full-screen lockscreen wake-up and 15-step sensor verification.`,
-      );
-      await refreshState();
-    } catch (err: any) {
-      Alert.alert('Demo Error', err.message || 'Could not trigger demo alarm.');
-    }
-  };
-
   const openManualAlarm = () => {
     const now = new Date();
     setManualHour(String(now.getHours()).padStart(2, '0'));
@@ -761,10 +736,6 @@ function WakeMeUpApp() {
                 <Text style={styles.modalSubmitText}>Save settings</Text>
               </TouchableOpacity>
             </View>
-          )}
-
-          {activeTab === 'demo' && (
-            <DemoModeCard onTriggerDemo={handleTriggerDemo} isTriggering={isProcessing} />
           )}
         </ScrollView>
 
@@ -1368,22 +1339,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-  },
-  demoIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  demoPlay: {
-    marginLeft: 3,
-    borderTopWidth: 6,
-    borderBottomWidth: 6,
-    borderLeftWidth: 9,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
   },
   modalContent: {
     backgroundColor: '#202821',

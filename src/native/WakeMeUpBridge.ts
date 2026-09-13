@@ -188,11 +188,6 @@ class WakeMeUpBridge {
     return await WakeMeUpModule.pickAlarmTime(hour, minute);
   }
 
-  async triggerDemoAlarm(delaySeconds = 15): Promise<{ id: string; firstAlarmAt: number }> {
-    if (!WakeMeUpModule) throw new Error('Native module unavailable');
-    return await WakeMeUpModule.triggerDemoAlarm(delaySeconds);
-  }
-
   async cancelPlan(planId: string): Promise<boolean> {
     if (!WakeMeUpModule) return false;
     return await WakeMeUpModule.cancelPlan(planId);

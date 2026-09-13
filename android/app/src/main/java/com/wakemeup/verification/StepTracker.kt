@@ -66,7 +66,7 @@ class StepTracker(
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    // Simulated / manual step injection for demo / testing
+    // Simulated / manual step injection for testing
     fun injectStep() {
         currentDelta += 1
         onStepDeltaUpdate(currentDelta)

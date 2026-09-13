@@ -291,45 +291,6 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun triggerDemoAlarm(delaySeconds: Int, promise: Promise) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val now = System.currentTimeMillis()
-                val triggerAt = now + (delaySeconds * 1000L)
-                val wakeObjectiveAt = triggerAt + (180 * 1000L)
-
-                val demoPlan = WakePlanEntity(
-                    id = "demo-" + UUID.randomUUID().toString().take(8),
-                    eventTitle = "Demo Mode: Fast-Forward Wake Check",
-                    eventStart = now + (30 * 60 * 1000L),
-                    wakeObjectiveAt = wakeObjectiveAt,
-                    firstAlarmAt = triggerAt,
-                    requiredSteps = 15,
-                    gracePeriodSeconds = 120,
-                    status = "APPROVED",
-                    reasoningSummary = "Demo mode compressed wake objective for fast evaluation"
-                )
-
-                db.wakePlanDao().insert(demoPlan)
-                alarmScheduler.scheduleWakePlan(demoPlan)
-
-                withContext(Dispatchers.Main) {
-                    val map = Arguments.createMap().apply {
-                        putString("id", demoPlan.id)
-                        putDouble("firstAlarmAt", triggerAt.toDouble())
-                        putInt("delaySeconds", delaySeconds)
-                    }
-                    promise.resolve(map)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    promise.reject("DEMO_ALARM_ERROR", e.message, e)
-                }
-            }
-        }
-    }
-
-    @ReactMethod
     fun getActivePlan(promise: Promise) {
         CoroutineScope(Dispatchers.IO).launch {
             try {

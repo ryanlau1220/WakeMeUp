@@ -217,7 +217,7 @@ class WakeVerificationService : Service() {
             var retryScheduled = false
             if (attempt < retryLimit) {
                 if (plan != null) {
-                    // ponytail: 30-second retry keeps the judge demo short; make it user-configurable only if needed.
+                    // ponytail: fixed short retry delay; add a user setting only if recovery timing needs tuning.
                     val retryAt = System.currentTimeMillis() + 30_000L
                     db.wakePlanDao().updateScheduledTime(planId, retryAt, "RETRYING")
                     AlarmScheduler(this@WakeVerificationService).scheduleWakePlan(

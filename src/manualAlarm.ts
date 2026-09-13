@@ -29,7 +29,7 @@ export function createManualWakePlan(
     wakeObjectiveAt: firstAlarmAt + 60_000,
     firstAlarmAt,
     requiredSteps: 15,
-    gracePeriodSeconds: 180,
-    retryLimit: 2,
+    gracePeriodSeconds: 30,
+    retryLimit: 1,
   };
 }
