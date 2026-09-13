@@ -47,7 +47,7 @@ class AlarmReceiver : BroadcastReceiver() {
         // Acquire temporary WakeLock to guarantee execution
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            PowerManager.PARTIAL_WAKE_LOCK,
             "WakeMeUp:AlarmTriggerWakeLock"
         )
         wakeLock.acquire(10 * 1000L) // 10 seconds max

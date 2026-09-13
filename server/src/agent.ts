@@ -41,13 +41,18 @@ export async function generateWakePlan({
   events,
   preferences,
   history,
+  feedback,
 }: {
   events: CalendarEventPayload[];
   preferences?: WakePreferences;
   history?: any[];
+  feedback?: string;
 }): Promise<WakePlanResult> {
   if (!Array.isArray(events) || events.length === 0 || !events.every(isCalendarEventPayload)) {
     throw new Error('Select an upcoming commitment before generating a wake plan.')
+  }
+  if (feedback !== undefined && (typeof feedback !== 'string' || feedback.length > 500)) {
+    throw new Error('Adjustment feedback must be 500 characters or fewer.')
   }
   const systemPrompt = `You are Wake Me Up, an intelligent morning scheduling agent.
 Your mission:
@@ -83,6 +88,7 @@ Return ONLY a valid JSON object matching this schema:
     upcomingEvents: events,
     userPreferences: preferences || { prepMinutes: 25, travelMinutes: 30, safetyMargin: 10 },
     recentWakeHistory: history || [],
+    userFeedback: feedback || '',
   });
 
   const response = await openai.chat.completions.create({

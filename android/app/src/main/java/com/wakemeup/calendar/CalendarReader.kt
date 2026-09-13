@@ -8,6 +8,7 @@ import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Calendar
 
 data class CalendarEventItem(
     val id: String,
@@ -90,17 +91,21 @@ class CalendarReader(private val context: Context) {
                     val location = if (locationIdx >= 0) it.getString(locationIdx) else null
                     val desc = if (descIdx >= 0) it.getString(descIdx) else null
 
-                    events.add(
-                        CalendarEventItem(
-                            id = id,
-                            title = title,
-                            startMillis = begin,
-                            endMillis = end,
-                            isAllDay = allDay,
-                            location = location,
-                            description = desc
+                    val hour = Calendar.getInstance().apply { timeInMillis = begin }
+                        .get(Calendar.HOUR_OF_DAY)
+                    if (!allDay && hour in 5..11) {
+                        events.add(
+                            CalendarEventItem(
+                                id = id,
+                                title = title,
+                                startMillis = begin,
+                                endMillis = end,
+                                isAllDay = allDay,
+                                location = location,
+                                description = desc
+                            )
                         )
-                    )
+                    }
                 }
             }
         } catch (e: Exception) {

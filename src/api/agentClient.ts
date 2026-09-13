@@ -1,15 +1,17 @@
-import type { CalendarEvent, WakePlan } from '../native/WakeMeUpBridge';
+import type { CalendarEvent, WakeHistoryItem, WakePlan } from '../native/WakeMeUpBridge';
 
 const SERVER_BASE_URL = 'http://localhost:3000';
 
 export async function requestAgentWakePlan(
   events: CalendarEvent[],
   preferences = { prepMinutes: 25, travelMinutes: 30, safetyMargin: 10 },
+  history: WakeHistoryItem[] = [],
+  feedback?: string,
 ): Promise<WakePlan> {
   const response = await fetch(`${SERVER_BASE_URL}/api/plan/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ events, preferences }),
+    body: JSON.stringify({ events, preferences, history, feedback }),
   });
 
   if (!response.ok) {
@@ -17,7 +19,12 @@ export async function requestAgentWakePlan(
     throw new Error(`Agent request failed: ${errorText}`);
   }
 
-  return await response.json();
+  const plan = await response.json();
+  return {
+    ...plan,
+    id: `draft-${Date.now()}`,
+    calendarEventId: plan.eventId,
+  };
 }
 
 export async function sendTelegramEscalation(planTitle: string, message: string) {

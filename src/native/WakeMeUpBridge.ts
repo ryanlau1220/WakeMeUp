@@ -40,6 +40,14 @@ export interface WakeReadiness {
   isReadyOffline: boolean;
 }
 
+export interface WakeHistoryItem {
+  wakePlanId: string;
+  attemptCount: number;
+  stepsObserved: number;
+  verificationMethod: string | null;
+  success: boolean;
+}
+
 export interface StepProgressEvent {
   planId: string;
   steps: number;
@@ -102,6 +110,20 @@ class WakeMeUpBridge {
     return await WakeMeUpModule.requestFullScreenIntentPermission();
   }
 
+  async savePlanFeedback(
+    wakePlanId: string,
+    decision: 'APPROVED' | 'ADJUSTED' | 'REJECTED',
+    feedback = '',
+  ): Promise<void> {
+    if (!WakeMeUpModule) return;
+    await WakeMeUpModule.savePlanFeedback(wakePlanId, decision, feedback);
+  }
+
+  async getRecentWakeHistory(limit = 10): Promise<WakeHistoryItem[]> {
+    if (!WakeMeUpModule) return [];
+    return await WakeMeUpModule.getRecentWakeHistory(limit);
+  }
+
   async getActivePlan(): Promise<WakePlan | null> {
     if (!WakeMeUpModule) return null;
     return await WakeMeUpModule.getActivePlan();
@@ -120,6 +142,11 @@ class WakeMeUpBridge {
   async verifyQrCode(scannedCode: string, expectedCode: string, planId: string): Promise<boolean> {
     if (!WakeMeUpModule) return false;
     return await WakeMeUpModule.verifyQrCode(scannedCode, expectedCode, planId);
+  }
+
+  async scanQrCode(expectedCode: string, planId: string): Promise<boolean> {
+    if (!WakeMeUpModule) return false;
+    return await WakeMeUpModule.scanQrCode(expectedCode, planId);
   }
 
   onAlarmTriggered(
@@ -144,6 +171,10 @@ class WakeMeUpBridge {
     callback: (data: { planId: string; stepsObserved: number; requiredSteps: number }) => void,
   ) {
     return this.emitter?.addListener('QR_REQUIRED', callback as any);
+  }
+
+  onEscalated(callback: (data: { planId: string; eventTitle: string }) => void) {
+    return this.emitter?.addListener('ESCALATED', callback as any);
   }
 }
 

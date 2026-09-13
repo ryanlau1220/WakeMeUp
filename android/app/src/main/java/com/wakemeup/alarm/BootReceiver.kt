@@ -12,12 +12,15 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
+        val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            val db = AppDatabase.getDatabase(context)
-            val activePlan = db.wakePlanDao().getActivePlan()
-            if (activePlan != null && activePlan.firstAlarmAt > System.currentTimeMillis()) {
+            try {
+                val db = AppDatabase.getDatabase(context)
                 val scheduler = AlarmScheduler(context)
-                scheduler.scheduleWakePlan(activePlan)
+                db.wakePlanDao().getFutureScheduledPlans(System.currentTimeMillis())
+                    .forEach(scheduler::scheduleWakePlan)
+            } finally {
+                pendingResult.finish()
             }
         }
     }

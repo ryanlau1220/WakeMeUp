@@ -15,9 +15,13 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.wakemeup.alarm.AlarmScheduler
 import com.wakemeup.calendar.CalendarReader
 import com.wakemeup.db.AppDatabase
+import com.wakemeup.db.PlanFeedbackEntity
 import com.wakemeup.db.WakeOutcomeEntity
 import com.wakemeup.db.WakePlanEntity
 import kotlinx.coroutines.CoroutineScope
@@ -168,6 +172,7 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
 
                 val plan = WakePlanEntity(
                     id = id,
+                    calendarEventId = if (planData.hasKey("calendarEventId")) planData.getString("calendarEventId") else null,
                     eventTitle = eventTitle,
                     eventStart = eventStart,
                     wakeObjectiveAt = wakeObjectiveAt,
@@ -246,12 +251,14 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
                     if (plan != null) {
                         val map = Arguments.createMap().apply {
                             putString("id", plan.id)
+                            putString("calendarEventId", plan.calendarEventId)
                             putString("eventTitle", plan.eventTitle)
                             putDouble("eventStart", plan.eventStart.toDouble())
                             putDouble("wakeObjectiveAt", plan.wakeObjectiveAt.toDouble())
                             putDouble("firstAlarmAt", plan.firstAlarmAt.toDouble())
                             putInt("requiredSteps", plan.requiredSteps)
                             putInt("gracePeriodSeconds", plan.gracePeriodSeconds)
+                            putInt("retryLimit", plan.retryLimit)
                             putString("status", plan.status)
                             putString("reasoningSummary", plan.reasoningSummary)
                         }
@@ -269,33 +276,50 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun savePlanFeedback(wakePlanId: String, decision: String, feedback: String, promise: Promise) {
+        if (wakePlanId.isBlank() || decision !in setOf("APPROVED", "ADJUSTED", "REJECTED") || feedback.length > 500) {
+            promise.reject("INVALID_FEEDBACK", "Invalid plan feedback")
+            return
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                db.planFeedbackDao().insert(
+                    PlanFeedbackEntity(UUID.randomUUID().toString(), wakePlanId, decision, feedback.trim())
+                )
+                withContext(Dispatchers.Main) { promise.resolve(null) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { promise.reject("FEEDBACK_ERROR", e.message, e) }
+            }
+        }
+    }
+
+    @ReactMethod
+    fun getRecentWakeHistory(limit: Int, promise: Promise) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val entries = db.wakeOutcomeDao().getAllOutcomes().take(limit.coerceIn(1, 20))
+                val array = Arguments.createArray()
+                entries.forEach { outcome ->
+                    array.pushMap(Arguments.createMap().apply {
+                        putString("wakePlanId", outcome.wakePlanId)
+                        putInt("attemptCount", outcome.attemptCount)
+                        putInt("stepsObserved", outcome.stepsObserved)
+                        putString("verificationMethod", outcome.verificationMethod)
+                        putBoolean("success", outcome.success)
+                    })
+                }
+                withContext(Dispatchers.Main) { promise.resolve(array) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { promise.reject("HISTORY_ERROR", e.message, e) }
+            }
+        }
+    }
+
+    @ReactMethod
     fun verifyQrCode(scannedCode: String, expectedCode: String, planId: String, promise: Promise) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val matches = scannedCode.trim() == expectedCode.trim() || scannedCode.contains("WAKEMEUP")
-                if (matches) {
-                    alarmScheduler.cancelAlarm(planId)
-                    reactContext.stopService(Intent(reactContext, com.wakemeup.verification.WakeVerificationService::class.java))
-                    db.wakePlanDao().updateStatus(planId, "VERIFIED")
-                    db.wakeOutcomeDao().insert(
-                        WakeOutcomeEntity(
-                            id = UUID.randomUUID().toString(),
-                            wakePlanId = planId,
-                            alarmTriggeredAt = System.currentTimeMillis() - 60000,
-                            firstDismissedAt = System.currentTimeMillis() - 30000,
-                            attemptCount = 1,
-                            verifiedAt = System.currentTimeMillis(),
-                            verificationMethod = "QR",
-                            stepsObserved = 0,
-                            qrUsed = true,
-                            success = true
-                        )
-                    )
-                    WakeMeUpEventEmitter.sendEvent("WAKE_VERIFIED", mapOf(
-                        "planId" to planId,
-                        "verificationMethod" to "QR"
-                    ))
-                }
+                val matches = completeQrVerification(scannedCode, expectedCode, planId)
                 withContext(Dispatchers.Main) {
                     promise.resolve(matches)
                 }
@@ -305,6 +329,61 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
                 }
             }
         }
+    }
+
+    @ReactMethod
+    fun scanQrCode(expectedCode: String, planId: String, promise: Promise) {
+        val activity = reactContext.currentActivity ?: run {
+            promise.reject("QR_SCANNER_UNAVAILABLE", "Open Wake Me Up before scanning the QR code.")
+            return
+        }
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        GmsBarcodeScanning.getClient(activity, options).startScan()
+            .addOnSuccessListener { barcode ->
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val verified = completeQrVerification(barcode.rawValue ?: "", expectedCode, planId)
+                        withContext(Dispatchers.Main) { promise.resolve(verified) }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) { promise.reject("QR_ERROR", e.message, e) }
+                    }
+                }
+            }
+            .addOnCanceledListener { promise.resolve(false) }
+            .addOnFailureListener { error -> promise.reject("QR_SCANNER_ERROR", error.message, error) }
+    }
+
+    private suspend fun completeQrVerification(
+        scannedCode: String,
+        expectedCode: String,
+        planId: String,
+    ): Boolean {
+        if (planId.isBlank() || scannedCode.trim() != expectedCode.trim()) return false
+        alarmScheduler.cancelAlarm(planId)
+        reactContext.stopService(Intent(reactContext, com.wakemeup.verification.WakeVerificationService::class.java))
+        db.wakePlanDao().updateStatus(planId, "VERIFIED")
+        db.wakeOutcomeDao().insert(
+            WakeOutcomeEntity(
+                id = UUID.randomUUID().toString(),
+                wakePlanId = planId,
+                alarmTriggeredAt = System.currentTimeMillis() - 60000,
+                firstDismissedAt = System.currentTimeMillis() - 30000,
+                attemptCount = 1,
+                verifiedAt = System.currentTimeMillis(),
+                verificationMethod = "QR",
+                stepsObserved = 0,
+                qrUsed = true,
+                success = true
+            )
+        )
+        WakeMeUpEventEmitter.sendEvent("WAKE_VERIFIED", mapOf(
+            "planId" to planId,
+            "verificationMethod" to "QR"
+        ))
+        return true
     }
 
     @ReactMethod

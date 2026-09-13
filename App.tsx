@@ -4,7 +4,6 @@ import {
   Modal,
   PermissionsAndroid,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -13,7 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { requestAgentWakePlan } from './src/api/agentClient';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { requestAgentWakePlan, sendTelegramEscalation } from './src/api/agentClient';
 import { CalendarList } from './src/components/CalendarList';
 import { DemoModeCard } from './src/components/DemoModeCard';
 import { VerificationActiveCard } from './src/components/VerificationActiveCard';
@@ -37,6 +37,7 @@ export default function App() {
   const [currentSteps, setCurrentSteps] = useState(0);
   const [requiredSteps, setRequiredSteps] = useState(15);
   const [isVerified, setIsVerified] = useState(false);
+  const [verifyingPlanId, setVerifyingPlanId] = useState<string | null>(null);
 
   // Adjust Plan modal
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -45,11 +46,10 @@ export default function App() {
 
   // QR Modal
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
-  const [qrCodeInput, setQrCodeInput] = useState('');
 
   useEffect(() => {
     initApp();
-    setupEventListeners();
+    return setupEventListeners();
   }, []);
 
   const requestPermissions = async () => {
@@ -96,6 +96,7 @@ export default function App() {
       setCurrentSteps(0);
       setRequiredSteps(data.requiredSteps || 15);
       setIsVerified(false);
+      setVerifyingPlanId(data.planId);
     });
 
     const subStep = Bridge.onStepProgress((data) => {
@@ -114,7 +115,15 @@ export default function App() {
 
     const subQr = Bridge.onQrRequired((data) => {
       console.log('Bridge Event: QR_REQUIRED', data);
+      setVerifyingPlanId(data.planId);
       setIsQrModalOpen(true);
+    });
+
+    const subEscalated = Bridge.onEscalated((data) => {
+      void sendTelegramEscalation(
+        data.eventTitle,
+        `Wake plan ${data.planId} remained unverified after all alarm retries.`,
+      );
     });
 
     return () => {
@@ -123,13 +132,18 @@ export default function App() {
       subStep?.remove();
       subVerified?.remove();
       subQr?.remove();
+      subEscalated?.remove();
     };
   };
 
   const handleGeneratePlan = async (event: CalendarEvent) => {
     setIsProcessing(true);
     try {
-      const plan = await requestAgentWakePlan([event]);
+      const plan = await requestAgentWakePlan(
+        [event],
+        undefined,
+        await Bridge.getRecentWakeHistory(),
+      );
       setDraftPlan(plan);
     } catch (err: any) {
       Alert.alert('Agent Error', err.message || 'Failed to generate wake plan from agent.');
@@ -160,6 +174,7 @@ export default function App() {
         return;
       }
       await Bridge.saveAndSchedulePlan(plan);
+      await Bridge.savePlanFeedback(plan.id, 'APPROVED');
       setDraftPlan(null);
       await refreshState();
       Alert.alert(
@@ -171,8 +186,10 @@ export default function App() {
     }
   };
 
-  const handleRejectPlan = () => {
+  const handleRejectPlan = async (plan: WakePlan) => {
+    await Bridge.savePlanFeedback(plan.id, 'REJECTED', adjustNote);
     setDraftPlan(null);
+    setAdjustNote('');
   };
 
   const handleCancelActivePlan = async (planId: string) => {
@@ -201,166 +218,174 @@ export default function App() {
     }
   };
 
-  const handleQrSubmit = async () => {
-    const planId = activePlan?.id || draftPlan?.id || 'demo-plan';
-    const ok = await Bridge.verifyQrCode(qrCodeInput, 'WAKEMEUP_BATHROOM_QR', planId);
-    if (ok) {
-      setIsQrModalOpen(false);
-      setIsVerified(true);
-      Alert.alert('QR Verified', 'Bathroom scan confirmed. Wake objective satisfied!');
-      await refreshState();
-    } else {
-      Alert.alert('Invalid QR', 'Code does not match bathroom QR verification.');
+  const handleQrScan = async () => {
+    if (!verifyingPlanId) return;
+    try {
+      const ok = await Bridge.scanQrCode('WAKEMEUP_BATHROOM_QR', verifyingPlanId);
+      if (ok) {
+        setIsQrModalOpen(false);
+        setIsVerified(true);
+        Alert.alert('QR Verified', 'Bathroom scan confirmed. Wake objective satisfied!');
+        await refreshState();
+      } else {
+        Alert.alert('Invalid QR', 'This QR code is not the configured bathroom verification code.');
+      }
+    } catch (err: any) {
+      Alert.alert('Scanner Error', err.message || 'Could not open the QR scanner.');
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.appName}>WAKE ME UP</Text>
-            <Text style={styles.appTagline}>Schedule-Aware Mobile Wake Agent</Text>
-          </View>
-          <View style={styles.onlineBadge}>
-            <View style={styles.dot} />
-            <Text style={styles.onlineText}>AGENT READY</Text>
-          </View>
-        </View>
-
-        {/* Active Step Verification Card (shown when alarming/verifying) */}
-        {(isVerifying || isVerified) && (
-          <VerificationActiveCard
-            currentSteps={currentSteps}
-            requiredSteps={requiredSteps}
-            isVerified={isVerified}
-            onOpenQr={() => setIsQrModalOpen(true)}
-            onSimulateStep={handleSimulateStep}
-          />
-        )}
-
-        {/* Bedtime Wake Readiness */}
-        <WakeReadinessCard readiness={readiness} />
-
-        {/* AI Draft Plan (Awaiting Human-in-the-Loop Review) */}
-        {draftPlan && (
-          <WakePlanCard
-            plan={draftPlan}
-            isDraft={true}
-            onApprove={handleApprovePlan}
-            onAdjust={() => setIsAdjustModalOpen(true)}
-            onReject={handleRejectPlan}
-          />
-        )}
-
-        {/* Active Scheduled Plan (if no draft pending) */}
-        {!draftPlan && activePlan && (
-          <WakePlanCard
-            plan={activePlan}
-            isDraft={false}
-            onApprove={() => {}}
-            onAdjust={() => {}}
-            onReject={() => {}}
-            onCancel={handleCancelActivePlan}
-          />
-        )}
-
-        {/* 2-Minute Demo Mode Trigger */}
-        <DemoModeCard onTriggerDemo={handleTriggerDemo} isTriggering={isProcessing} />
-
-        {/* Upcoming Google Calendar Commitments */}
-        <CalendarList
-          events={events}
-          onRefresh={refreshState}
-          onGeneratePlan={handleGeneratePlan}
-        />
-
-        {/* Footer Note */}
-        <Text style={styles.footerNote}>
-          AI for contextual judgment • Deterministic Android for alarm & sensor reliability
-        </Text>
-      </ScrollView>
-
-      {/* QR Code Verification Fallback Modal */}
-      <Modal visible={isQrModalOpen} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Scan Bathroom QR Code</Text>
-            <Text style={styles.modalSub}>
-              Physical QR verification placed in your bathroom proves you are out of bed.
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter scanned QR code (e.g. WAKEMEUP)"
-              placeholderTextColor="#64748B"
-              value={qrCodeInput}
-              onChangeText={setQrCodeInput}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalSubmit]}
-                onPress={handleQrSubmit}
-              >
-                <Text style={styles.modalSubmitText}>Verify QR Code</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalClose]}
-                onPress={() => setIsQrModalOpen(false)}
-              >
-                <Text style={styles.modalCloseText}>Cancel</Text>
-              </TouchableOpacity>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.appName}>WAKE ME UP</Text>
+              <Text style={styles.appTagline}>Schedule-Aware Mobile Wake Agent</Text>
+            </View>
+            <View style={styles.onlineBadge}>
+              <View style={styles.dot} />
+              <Text style={styles.onlineText}>AGENT READY</Text>
             </View>
           </View>
-        </View>
-      </Modal>
 
-      {/* Adjust Plan Modal */}
-      <Modal visible={isAdjustModalOpen} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Adjust Wake Plan</Text>
-            <Text style={styles.modalSub}>Tell the agent how to adjust your wake objective:</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Make it 15 minutes later, I prep quickly"
-              placeholderTextColor="#64748B"
-              value={adjustNote}
-              onChangeText={setAdjustNote}
+          {/* Active Step Verification Card (shown when alarming/verifying) */}
+          {(isVerifying || isVerified) && (
+            <VerificationActiveCard
+              currentSteps={currentSteps}
+              requiredSteps={requiredSteps}
+              isVerified={isVerified}
+              onOpenQr={() => setIsQrModalOpen(true)}
+              onSimulateStep={handleSimulateStep}
             />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalSubmit]}
-                onPress={() => {
-                  if (draftPlan) {
-                    // Shift first alarm by 15 mins for demo
-                    setDraftPlan({
-                      ...draftPlan,
-                      firstAlarmAt: draftPlan.firstAlarmAt + 15 * 60 * 1000,
-                      wakeObjectiveAt: draftPlan.wakeObjectiveAt + 15 * 60 * 1000,
-                      reasoningSummary: [
-                        ...((draftPlan.reasoningSummary as string[]) || []),
-                        `Adjusted by user preference: "${adjustNote}"`,
-                      ],
-                    });
-                  }
-                  setIsAdjustModalOpen(false);
-                }}
-              >
-                <Text style={styles.modalSubmitText}>Apply Adjustment</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalClose]}
-                onPress={() => setIsAdjustModalOpen(false)}
-              >
-                <Text style={styles.modalCloseText}>Close</Text>
-              </TouchableOpacity>
+          )}
+
+          {/* Bedtime Wake Readiness */}
+          <WakeReadinessCard readiness={readiness} />
+
+          {/* AI Draft Plan (Awaiting Human-in-the-Loop Review) */}
+          {draftPlan && (
+            <WakePlanCard
+              plan={draftPlan}
+              isDraft={true}
+              onApprove={handleApprovePlan}
+              onAdjust={() => setIsAdjustModalOpen(true)}
+              onReject={handleRejectPlan}
+            />
+          )}
+
+          {/* Active Scheduled Plan (if no draft pending) */}
+          {!draftPlan && activePlan && (
+            <WakePlanCard
+              plan={activePlan}
+              isDraft={false}
+              onApprove={() => {}}
+              onAdjust={() => {}}
+              onReject={() => {}}
+              onCancel={handleCancelActivePlan}
+            />
+          )}
+
+          {/* 2-Minute Demo Mode Trigger */}
+          <DemoModeCard onTriggerDemo={handleTriggerDemo} isTriggering={isProcessing} />
+
+          {/* Upcoming Google Calendar Commitments */}
+          <CalendarList
+            events={events}
+            onRefresh={refreshState}
+            onGeneratePlan={handleGeneratePlan}
+          />
+
+          {/* Footer Note */}
+          <Text style={styles.footerNote}>
+            AI for contextual judgment • Deterministic Android for alarm & sensor reliability
+          </Text>
+        </ScrollView>
+
+        {/* QR Code Verification Fallback Modal */}
+        <Modal visible={isQrModalOpen} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Scan Bathroom QR Code</Text>
+              <Text style={styles.modalSub}>
+                Physical QR verification placed in your bathroom proves you are out of bed.
+              </Text>
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalSubmit]}
+                  onPress={handleQrScan}
+                >
+                  <Text style={styles.modalSubmitText}>Open QR Scanner</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalClose]}
+                  onPress={() => setIsQrModalOpen(false)}
+                >
+                  <Text style={styles.modalCloseText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+
+        {/* Adjust Plan Modal */}
+        <Modal visible={isAdjustModalOpen} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Adjust Wake Plan</Text>
+              <Text style={styles.modalSub}>Tell the agent how to adjust your wake objective:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Make it 15 minutes later, I prep quickly"
+                placeholderTextColor="#64748B"
+                value={adjustNote}
+                onChangeText={setAdjustNote}
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalSubmit]}
+                  onPress={async () => {
+                    const event = events.find((item) => item.id === draftPlan?.calendarEventId);
+                    if (!draftPlan || !event) return;
+                    setIsProcessing(true);
+                    try {
+                      await Bridge.savePlanFeedback(draftPlan.id, 'ADJUSTED', adjustNote);
+                      const revisedPlan = await requestAgentWakePlan(
+                        [event],
+                        undefined,
+                        await Bridge.getRecentWakeHistory(),
+                        adjustNote,
+                      );
+                      setDraftPlan({ ...revisedPlan, id: draftPlan.id });
+                      setAdjustNote('');
+                      setIsAdjustModalOpen(false);
+                    } catch (err: any) {
+                      Alert.alert(
+                        'Adjustment Error',
+                        err.message || 'Could not revise the wake plan.',
+                      );
+                    } finally {
+                      setIsProcessing(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.modalSubmitText}>Apply Adjustment</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalClose]}
+                  onPress={() => setIsAdjustModalOpen(false)}
+                >
+                  <Text style={styles.modalCloseText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

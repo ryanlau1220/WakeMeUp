@@ -213,14 +213,15 @@ class WakeVerificationService : Service() {
                 )
             )
 
+            val plan = db.wakePlanDao().getPlanById(planId)
             var retryScheduled = false
             if (attempt < retryLimit) {
-                val plan = db.wakePlanDao().getPlanById(planId)
                 if (plan != null) {
-                    db.wakePlanDao().updateStatus(planId, "RETRYING")
                     // ponytail: 30-second retry keeps the judge demo short; make it user-configurable only if needed.
+                    val retryAt = System.currentTimeMillis() + 30_000L
+                    db.wakePlanDao().updateScheduledTime(planId, retryAt, "RETRYING")
                     AlarmScheduler(this@WakeVerificationService).scheduleWakePlan(
-                        plan.copy(firstAlarmAt = System.currentTimeMillis() + 30_000L),
+                        plan.copy(firstAlarmAt = retryAt),
                         attempt + 1
                     )
                     retryScheduled = true
@@ -235,6 +236,12 @@ class WakeVerificationService : Service() {
                 "stepsObserved" to currentSteps,
                 "requiredSteps" to requiredSteps
             ))
+            if (!retryScheduled) {
+                WakeMeUpEventEmitter.sendEvent("ESCALATED", mapOf(
+                    "planId" to planId,
+                    "eventTitle" to (plan?.eventTitle ?: "Wake objective")
+                ))
+            }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }

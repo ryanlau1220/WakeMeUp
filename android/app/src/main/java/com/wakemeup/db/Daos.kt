@@ -23,8 +23,14 @@ interface WakePlanDao {
     @Query("SELECT * FROM wake_plans ORDER BY createdAt DESC")
     suspend fun getAllPlans(): List<WakePlanEntity>
 
+    @Query("SELECT * FROM wake_plans WHERE status IN ('APPROVED', 'RETRYING') AND firstAlarmAt > :now")
+    suspend fun getFutureScheduledPlans(now: Long): List<WakePlanEntity>
+
     @Query("UPDATE wake_plans SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
+
+    @Query("UPDATE wake_plans SET firstAlarmAt = :firstAlarmAt, status = :status WHERE id = :id")
+    suspend fun updateScheduledTime(id: String, firstAlarmAt: Long, status: String)
 }
 
 @Dao
