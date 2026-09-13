@@ -31,6 +31,14 @@ test('rejects an alarm that is not before its commitment', () => {
 
 test('creates a scheduleable fallback plan', () => {
   const plan = createSafeWakePlan(event)
-  assert.ok(plan.firstAlarmAt < plan.wakeObjectiveAt)
-  assert.ok(plan.wakeObjectiveAt < plan.eventStart)
+  assert.deepEqual(validateWakePlan(plan, [event], plan.firstAlarmAt - 1), plan)
+})
+
+test('uses an immediate recovery alarm when preparation time has already elapsed', () => {
+  const now = 1_700_000_000_000
+  const soonEvent = { ...event, startMillis: now + 10 * 60_000, endMillis: now + 70 * 60_000 }
+  const plan = createSafeWakePlan(soonEvent, {}, now)
+
+  assert.equal(plan.firstAlarmAt, now + 60_000)
+  assert.deepEqual(validateWakePlan(plan, [soonEvent], now), plan)
 })

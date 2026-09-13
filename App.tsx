@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -24,13 +24,27 @@ import {
   type CalendarEvent,
   type WakePlan,
   type WakeReadiness,
+  type WakeSettings,
 } from './src/native/WakeMeUpBridge';
+
+const defaultWakeSettings: WakeSettings = {
+  prepMinutes: 25,
+  travelMinutes: 30,
+  safetyMargin: 10,
+  qrCode: 'WAKEMEUP_BATHROOM_QR',
+  telegramEscalationEnabled: false,
+};
 
 export default function App() {
   const [readiness, setReadiness] = useState<WakeReadiness | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [activePlan, setActivePlan] = useState<WakePlan | null>(null);
   const [draftPlan, setDraftPlan] = useState<WakePlan | null>(null);
+  const [wakeSettings, setWakeSettings] = useState<WakeSettings>(defaultWakeSettings);
+  const wakeSettingsRef = useRef(wakeSettings);
+  const [wakeHistory, setWakeHistory] = useState<
+    Awaited<ReturnType<typeof Bridge.getRecentWakeHistory>>
+  >([]);
 
   // Verification state
   const [isVerifying, setIsVerifying] = useState(false);
@@ -46,11 +60,17 @@ export default function App() {
 
   // QR Modal
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<WakeSettings>(defaultWakeSettings);
 
   useEffect(() => {
     initApp();
     return setupEventListeners();
   }, []);
+
+  useEffect(() => {
+    wakeSettingsRef.current = wakeSettings;
+  }, [wakeSettings]);
 
   const requestPermissions = async () => {
     if (Platform.OS !== 'android') return;
@@ -67,19 +87,24 @@ export default function App() {
 
   const initApp = async () => {
     await requestPermissions();
+    const settings = await Bridge.getWakeSettings();
+    setWakeSettings(settings);
+    setSettingsDraft(settings);
     await refreshState();
   };
 
   const refreshState = async () => {
     try {
-      const read = await Bridge.getWakeReadiness();
+      const [read, active, evts, history] = await Promise.all([
+        Bridge.getWakeReadiness(),
+        Bridge.getActivePlan(),
+        Bridge.getUpcomingEvents(36),
+        Bridge.getRecentWakeHistory(),
+      ]);
       setReadiness(read);
-
-      const active = await Bridge.getActivePlan();
       setActivePlan(active);
-
-      const evts = await Bridge.getUpcomingEvents(36);
       setEvents(evts);
+      setWakeHistory(history);
     } catch (err) {
       console.warn('State refresh error:', err);
     }
@@ -120,6 +145,7 @@ export default function App() {
     });
 
     const subEscalated = Bridge.onEscalated((data) => {
+      if (!wakeSettingsRef.current.telegramEscalationEnabled) return;
       void sendTelegramEscalation(
         data.eventTitle,
         `Wake plan ${data.planId} remained unverified after all alarm retries.`,
@@ -141,7 +167,7 @@ export default function App() {
     try {
       const plan = await requestAgentWakePlan(
         [event],
-        undefined,
+        wakeSettings,
         await Bridge.getRecentWakeHistory(),
       );
       setDraftPlan(plan);
@@ -202,6 +228,33 @@ export default function App() {
     await refreshState();
   };
 
+  const saveSettings = async () => {
+    const minutes = [
+      settingsDraft.prepMinutes,
+      settingsDraft.travelMinutes,
+      settingsDraft.safetyMargin,
+    ];
+    if (
+      minutes.some((value) => !Number.isSafeInteger(value) || value < 0 || value > 180) ||
+      !settingsDraft.qrCode.trim() ||
+      settingsDraft.qrCode.trim().length > 120
+    ) {
+      Alert.alert(
+        'Invalid settings',
+        'Use whole minutes from 0 to 180 and a QR value up to 120 characters.',
+      );
+      return;
+    }
+    try {
+      const savedSettings = { ...settingsDraft, qrCode: settingsDraft.qrCode.trim() };
+      await Bridge.saveWakeSettings(savedSettings);
+      setWakeSettings(savedSettings);
+      setIsSettingsModalOpen(false);
+    } catch (err: any) {
+      Alert.alert('Settings Error', err.message || 'Could not save wake settings.');
+    }
+  };
+
   const handleTriggerDemo = async (delaySeconds: number) => {
     try {
       if (!(await ensureAlarmPermissions())) return;
@@ -216,18 +269,10 @@ export default function App() {
     }
   };
 
-  const handleSimulateStep = () => {
-    const next = currentSteps + 1;
-    setCurrentSteps(next);
-    if (next >= requiredSteps) {
-      setIsVerified(true);
-    }
-  };
-
   const handleQrScan = async () => {
     if (!verifyingPlanId) return;
     try {
-      const ok = await Bridge.scanQrCode('WAKEMEUP_BATHROOM_QR', verifyingPlanId);
+      const ok = await Bridge.scanQrCode(wakeSettings.qrCode, verifyingPlanId);
       if (ok) {
         setIsQrModalOpen(false);
         setIsVerified(true);
@@ -248,14 +293,16 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.header}>
-            <View>
-              <Text style={styles.appName}>WAKE ME UP</Text>
-              <Text style={styles.appTagline}>Schedule-Aware Mobile Wake Agent</Text>
-            </View>
-            <View style={styles.onlineBadge}>
-              <View style={styles.dot} />
-              <Text style={styles.onlineText}>AGENT READY</Text>
-            </View>
+            <Text style={styles.appName}>wake me up</Text>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() => {
+                setSettingsDraft(wakeSettings);
+                setIsSettingsModalOpen(true);
+              }}
+            >
+              <Text style={styles.settingsButtonText}>SETTINGS</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Active Step Verification Card (shown when alarming/verifying) */}
@@ -265,14 +312,9 @@ export default function App() {
               requiredSteps={requiredSteps}
               isVerified={isVerified}
               onOpenQr={() => setIsQrModalOpen(true)}
-              onSimulateStep={handleSimulateStep}
             />
           )}
 
-          {/* Bedtime Wake Readiness */}
-          <WakeReadinessCard readiness={readiness} />
-
-          {/* AI Draft Plan (Awaiting Human-in-the-Loop Review) */}
           {draftPlan && (
             <WakePlanCard
               plan={draftPlan}
@@ -283,7 +325,6 @@ export default function App() {
             />
           )}
 
-          {/* Active Scheduled Plan (if no draft pending) */}
           {!draftPlan && activePlan && (
             <WakePlanCard
               plan={activePlan}
@@ -295,20 +336,31 @@ export default function App() {
             />
           )}
 
-          {/* 2-Minute Demo Mode Trigger */}
-          <DemoModeCard onTriggerDemo={handleTriggerDemo} isTriggering={isProcessing} />
-
-          {/* Upcoming Google Calendar Commitments */}
           <CalendarList
             events={events}
             onRefresh={refreshState}
             onGeneratePlan={handleGeneratePlan}
           />
 
-          {/* Footer Note */}
-          <Text style={styles.footerNote}>
-            AI for contextual judgment • Deterministic Android for alarm & sensor reliability
-          </Text>
+          <WakeReadinessCard readiness={readiness} />
+
+          {wakeHistory.length > 0 && (
+            <View style={styles.historyCard}>
+              <Text style={styles.historyTitle}>Recently</Text>
+              {wakeHistory.slice(0, 3).map((entry) => (
+                <Text
+                  key={`${entry.wakePlanId}-${entry.alarmTriggeredAt}`}
+                  style={styles.historyItem}
+                >
+                  {entry.success ? '✓ Verified' : '• Unverified'} · {entry.attemptCount} attempt
+                  {entry.attemptCount === 1 ? '' : 's'} ·{' '}
+                  {new Date(entry.alarmTriggeredAt).toLocaleDateString()}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          <DemoModeCard onTriggerDemo={handleTriggerDemo} isTriggering={isProcessing} />
         </ScrollView>
 
         {/* QR Code Verification Fallback Modal */}
@@ -337,19 +389,104 @@ export default function App() {
           </View>
         </Modal>
 
+        <Modal visible={isSettingsModalOpen} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Wake Settings</Text>
+              <Text style={styles.inputLabel}>Preparation · minutes</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="number-pad"
+                value={
+                  Number.isFinite(settingsDraft.prepMinutes)
+                    ? String(settingsDraft.prepMinutes)
+                    : ''
+                }
+                onChangeText={(value) =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    prepMinutes: value === '' ? Number.NaN : Number(value),
+                  }))
+                }
+              />
+              <Text style={styles.inputLabel}>Travel · minutes</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="number-pad"
+                value={
+                  Number.isFinite(settingsDraft.travelMinutes)
+                    ? String(settingsDraft.travelMinutes)
+                    : ''
+                }
+                onChangeText={(value) =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    travelMinutes: value === '' ? Number.NaN : Number(value),
+                  }))
+                }
+              />
+              <Text style={styles.inputLabel}>Margin · minutes</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="number-pad"
+                value={
+                  Number.isFinite(settingsDraft.safetyMargin)
+                    ? String(settingsDraft.safetyMargin)
+                    : ''
+                }
+                onChangeText={(value) =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    safetyMargin: value === '' ? Number.NaN : Number(value),
+                  }))
+                }
+              />
+              <Text style={styles.inputLabel}>Bathroom QR</Text>
+              <TextInput
+                style={styles.input}
+                value={settingsDraft.qrCode}
+                onChangeText={(value) =>
+                  setSettingsDraft((current) => ({ ...current, qrCode: value }))
+                }
+              />
+              <TouchableOpacity
+                style={styles.telegramToggle}
+                onPress={() =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    telegramEscalationEnabled: !current.telegramEscalationEnabled,
+                  }))
+                }
+              >
+                <Text style={styles.telegramToggleText}>
+                  Telegram escalation: {settingsDraft.telegramEscalationEnabled ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalSubmit]}
+                  onPress={saveSettings}
+                >
+                  <Text style={styles.modalSubmitText}>Save Settings</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalClose]}
+                  onPress={() => setIsSettingsModalOpen(false)}
+                >
+                  <Text style={styles.modalCloseText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         {/* Adjust Plan Modal */}
         <Modal visible={isAdjustModalOpen} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Adjust Wake Plan</Text>
-              <Text style={styles.modalSub}>Tell the agent how to adjust your wake objective:</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Make it 15 minutes later, I prep quickly"
-                placeholderTextColor="#64748B"
-                value={adjustNote}
-                onChangeText={setAdjustNote}
-              />
+              <Text style={styles.inputLabel}>What should change?</Text>
+              <TextInput style={styles.input} value={adjustNote} onChangeText={setAdjustNote} />
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalBtn, styles.modalSubmit]}
@@ -361,7 +498,7 @@ export default function App() {
                       await Bridge.savePlanFeedback(draftPlan.id, 'ADJUSTED', adjustNote);
                       const revisedPlan = await requestAgentWakePlan(
                         [event],
-                        undefined,
+                        wakeSettings,
                         await Bridge.getRecentWakeHistory(),
                         adjustNote,
                       );
@@ -398,94 +535,106 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#080C14',
+    backgroundColor: '#141914',
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 32,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 8,
+    marginBottom: 26,
+    marginTop: 12,
   },
   appName: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 1.5,
+    color: '#fff9f0',
+    fontFamily: 'serif',
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: -1,
   },
-  appTagline: {
-    color: '#64748B',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  onlineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
+  settingsButton: {
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: '#4a554a',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 6,
-  },
-  onlineText: {
-    color: '#10B981',
-    fontSize: 10,
+  settingsButtonText: {
+    color: '#d8ded4',
+    fontSize: 11,
     fontWeight: '800',
   },
-  footerNote: {
-    color: '#475569',
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-    lineHeight: 16,
+  historyCard: {
+    marginBottom: 16,
+  },
+  historyTitle: {
+    color: '#8f9a8d',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  historyItem: {
+    color: '#d8ded4',
+    fontSize: 13,
+    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(12,15,12,0.86)',
     justifyContent: 'center',
     padding: 24,
   },
   modalContent: {
-    backgroundColor: '#131C2E',
-    borderRadius: 20,
+    backgroundColor: '#202821',
+    borderRadius: 24,
     padding: 22,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#4a554a',
   },
   modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: '#fff9f0',
+    fontFamily: 'serif',
+    fontSize: 24,
     fontWeight: '800',
     marginBottom: 6,
   },
   modalSub: {
-    color: '#94A3B8',
+    color: '#b9c1b5',
     fontSize: 13,
     marginBottom: 16,
     lineHeight: 18,
   },
   input: {
-    backgroundColor: '#0B1120',
-    color: '#FFFFFF',
+    backgroundColor: '#141914',
+    color: '#fff9f0',
     borderRadius: 12,
     padding: 14,
     fontSize: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#4a554a',
+  },
+  inputLabel: {
+    color: '#b9c1b5',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 7,
+  },
+  telegramToggle: {
+    backgroundColor: '#141914',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#4a554a',
+  },
+  telegramToggleText: {
+    color: '#d8ded4',
+    fontSize: 14,
+    fontWeight: '700',
   },
   modalActions: {
     flexDirection: 'row',
@@ -498,18 +647,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalSubmit: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: '#f0a36d',
   },
   modalSubmitText: {
-    color: '#000000',
+    color: '#202821',
     fontWeight: '800',
     fontSize: 13,
   },
   modalClose: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#2d362e',
   },
   modalCloseText: {
-    color: '#94A3B8',
+    color: '#d8ded4',
     fontWeight: '700',
     fontSize: 13,
   },

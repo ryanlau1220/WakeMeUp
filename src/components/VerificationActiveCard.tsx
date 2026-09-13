@@ -1,184 +1,73 @@
-import type React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface Props {
   currentSteps: number;
   requiredSteps: number;
   isVerified: boolean;
   onOpenQr: () => void;
-  onSimulateStep?: () => void;
 }
 
-export const VerificationActiveCard: React.FC<Props> = ({
+export function VerificationActiveCard({
   currentSteps,
   requiredSteps,
   isVerified,
   onOpenQr,
-  onSimulateStep,
-}) => {
-  const progressPct = Math.min(100, Math.round((currentSteps / requiredSteps) * 100));
+}: Props) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const ratio = Math.min(1, currentSteps / requiredSteps);
+
+  useEffect(() => {
+    Animated.spring(progress, { toValue: ratio, useNativeDriver: false }).start();
+  }, [progress, ratio]);
 
   if (isVerified) {
     return (
-      <View style={[styles.card, styles.verifiedBorder]}>
-        <Text style={styles.verifiedBadge}>🎉 WAKE VERIFIED</Text>
-        <Text style={styles.verifiedTitle}>Your Morning Has Officially Started!</Text>
-        <Text style={styles.verifiedSub}>
-          Physical movement confirmed ({currentSteps} steps observed). Alarm dismissed permanently.
-        </Text>
+      <View style={[styles.card, styles.done]}>
+        <Text style={styles.doneTitle}>You’re up.</Text>
+        <Text style={styles.doneText}>Wake-up verified.</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.card, styles.activeBorder]}>
-      <View style={styles.headerRow}>
-        <View style={styles.blinkingDot} />
-        <Text style={styles.headerTitle}>ACTIVE STEP VERIFICATION</Text>
+    <View style={styles.card}>
+      <Text style={styles.kicker}>Keep moving</Text>
+      <View style={styles.countRow}>
+        <Text style={styles.count}>{currentSteps}</Text>
+        <Text style={styles.total}>/ {requiredSteps}</Text>
       </View>
-
-      <Text style={styles.instructions}>
-        Alarm dismissed. Walk around with your phone to prove you're out of bed!
-      </Text>
-
-      {/* Steps Display */}
-      <View style={styles.counterBox}>
-        <Text style={styles.stepNum}>{currentSteps}</Text>
-        <Text style={styles.stepTotal}>/ {requiredSteps} STEPS</Text>
-      </View>
-
-      {/* Progress Bar */}
-      <View style={styles.progressBarBg}>
-        <View style={[styles.progressBarFill, { width: `${progressPct}%` }]} />
-      </View>
-
-      <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.qrBtn} onPress={onOpenQr}>
-          <Text style={styles.qrBtnText}>📷 Use Bathroom QR Code</Text>
-        </TouchableOpacity>
-
-        {onSimulateStep && (
-          <TouchableOpacity style={styles.simBtn} onPress={onSimulateStep}>
-            <Text style={styles.simBtnText}>+1 Step (Desk Test)</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <Animated.View
+        style={[
+          styles.track,
+          {
+            width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+          },
+        ]}
+      />
+      <TouchableOpacity onPress={onOpenQr} style={styles.qr}>
+        <Text style={styles.qrText}>Use bathroom QR instead</Text>
+      </TouchableOpacity>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#131C2E',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-  },
-  activeBorder: {
-    borderColor: '#F59E0B',
-  },
-  verifiedBorder: {
-    borderColor: '#10B981',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  blinkingDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#F59E0B',
-    marginRight: 8,
-  },
-  headerTitle: {
-    color: '#F59E0B',
-    fontSize: 12,
+  card: { backgroundColor: '#f0a36d', borderRadius: 28, padding: 24, marginBottom: 18 },
+  done: { backgroundColor: '#5b7660' },
+  kicker: {
+    color: '#4b2c22',
+    fontSize: 14,
     fontWeight: '800',
+    textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  instructions: {
-    color: '#94A3B8',
-    fontSize: 14,
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  counterBox: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  stepNum: {
-    color: '#FFFFFF',
-    fontSize: 56,
-    fontWeight: '900',
-  },
-  stepTotal: {
-    color: '#94A3B8',
-    fontSize: 20,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  progressBarBg: {
-    height: 12,
-    backgroundColor: '#0B1120',
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginBottom: 18,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#F59E0B',
-    borderRadius: 6,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  qrBtn: {
-    flex: 1,
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  qrBtnText: {
-    color: '#38BDF8',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  simBtn: {
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  simBtnText: {
-    color: '#38BDF8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  verifiedBadge: {
-    color: '#10B981',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  verifiedTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  verifiedSub: {
-    color: '#94A3B8',
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  countRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 8 },
+  count: { color: '#1f2621', fontFamily: 'serif', fontSize: 58, fontWeight: '800' },
+  total: { color: '#4b2c22', fontSize: 21, fontWeight: '700' },
+  track: { height: 7, borderRadius: 4, backgroundColor: '#1f2621', marginTop: 12 },
+  qr: { marginTop: 20, alignSelf: 'flex-start' },
+  qrText: { color: '#1f2621', fontSize: 14, fontWeight: '800' },
+  doneTitle: { color: '#fff9f0', fontFamily: 'serif', fontSize: 38, fontWeight: '800' },
+  doneText: { color: '#d8ded4', fontSize: 15, marginTop: 5 },
 });

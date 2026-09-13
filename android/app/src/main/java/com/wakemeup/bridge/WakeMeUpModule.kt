@@ -18,6 +18,7 @@ import com.facebook.react.bridge.ReadableMap
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.wakemeup.BuildConfig
 import com.wakemeup.alarm.AlarmScheduler
 import com.wakemeup.calendar.CalendarReader
 import com.wakemeup.db.AppDatabase
@@ -36,12 +37,54 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
     private val calendarReader = CalendarReader(reactContext)
     private val alarmScheduler = AlarmScheduler(reactContext)
     private val db = AppDatabase.getDatabase(reactContext)
+    private val settings = reactContext.getSharedPreferences("wake_me_up_settings", Context.MODE_PRIVATE)
 
     init {
         WakeMeUpEventEmitter.setReactContext(reactContext)
     }
 
     override fun getName(): String = "WakeMeUpModule"
+
+    @ReactMethod
+    fun getAgentServerUrl(promise: Promise) {
+        promise.resolve(BuildConfig.AGENT_SERVER_URL)
+    }
+
+    @ReactMethod
+    fun getWakeSettings(promise: Promise) {
+        promise.resolve(Arguments.createMap().apply {
+            putInt("prepMinutes", settings.getInt("prepMinutes", 25))
+            putInt("travelMinutes", settings.getInt("travelMinutes", 30))
+            putInt("safetyMargin", settings.getInt("safetyMargin", 10))
+            putString("qrCode", settings.getString("qrCode", "WAKEMEUP_BATHROOM_QR"))
+            putBoolean("telegramEscalationEnabled", settings.getBoolean("telegramEscalationEnabled", false))
+        })
+    }
+
+    @ReactMethod
+    fun saveWakeSettings(
+        prepMinutes: Int,
+        travelMinutes: Int,
+        safetyMargin: Int,
+        qrCode: String,
+        telegramEscalationEnabled: Boolean,
+        promise: Promise,
+    ) {
+        val normalizedQrCode = qrCode.trim()
+        if (prepMinutes !in 0..180 || travelMinutes !in 0..180 || safetyMargin !in 0..180 ||
+            normalizedQrCode.isEmpty() || normalizedQrCode.length > 120) {
+            promise.reject("INVALID_SETTINGS", "Use 0-180 minutes and a QR code up to 120 characters.")
+            return
+        }
+        settings.edit()
+            .putInt("prepMinutes", prepMinutes)
+            .putInt("travelMinutes", travelMinutes)
+            .putInt("safetyMargin", safetyMargin)
+            .putString("qrCode", normalizedQrCode)
+            .putBoolean("telegramEscalationEnabled", telegramEscalationEnabled)
+            .apply()
+        promise.resolve(null)
+    }
 
     @ReactMethod
     fun addListener(eventName: String) {
@@ -169,6 +212,13 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
                 val gracePeriodSeconds = if (planData.hasKey("gracePeriodSeconds")) planData.getInt("gracePeriodSeconds") else 180
                 val retryLimit = if (planData.hasKey("retryLimit")) planData.getInt("retryLimit") else 2
                 val reasoningSummary = if (planData.hasKey("reasoningSummary")) planData.getString("reasoningSummary") ?: "" else ""
+                val now = System.currentTimeMillis()
+                require(firstAlarmAt > now && firstAlarmAt < wakeObjectiveAt && wakeObjectiveAt < eventStart) {
+                    "This wake plan is no longer schedulable. Choose a later commitment and generate it again."
+                }
+                require(requiredSteps in 1..100 && gracePeriodSeconds in 30..600 && retryLimit in 1..3) {
+                    "Wake plan settings are outside safe limits."
+                }
 
                 val plan = WakePlanEntity(
                     id = id,
@@ -302,6 +352,8 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
                 entries.forEach { outcome ->
                     array.pushMap(Arguments.createMap().apply {
                         putString("wakePlanId", outcome.wakePlanId)
+                        putDouble("alarmTriggeredAt", outcome.alarmTriggeredAt.toDouble())
+                        if (outcome.verifiedAt != null) putDouble("verifiedAt", outcome.verifiedAt.toDouble()) else putNull("verifiedAt")
                         putInt("attemptCount", outcome.attemptCount)
                         putInt("stepsObserved", outcome.stepsObserved)
                         putString("verificationMethod", outcome.verificationMethod)

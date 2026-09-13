@@ -73,6 +73,8 @@ def enableProguardInReleaseBuilds = false
  * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+def agentServerUrl = providers.gradleProperty('WAKE_ME_UP_SERVER_URL').getOrElse('http://localhost:3000')
+def escapedAgentServerUrl = agentServerUrl.replace('\\', '\\\\').replace('"', '\\"')
 
 android {
     ndkVersion = rootProject.ext.ndkVersion
@@ -86,6 +88,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        buildConfigField 'String', 'AGENT_SERVER_URL', "\"${escapedAgentServerUrl}\""
+    }
+    buildFeatures {
+        buildConfig true
     }
     signingConfigs {
         debug {

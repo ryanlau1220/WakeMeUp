@@ -1,5 +1,5 @@
-import type React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { CalendarEvent } from '../native/WakeMeUpBridge';
 
 interface Props {
@@ -8,126 +8,105 @@ interface Props {
   onGeneratePlan: (event: CalendarEvent) => void;
 }
 
-export const CalendarList: React.FC<Props> = ({ events, onRefresh, onGeneratePlan }) => {
-  const formatEventTime = (millis: number) => {
-    return new Date(millis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+export function CalendarList({ events, onRefresh, onGeneratePlan }: Props) {
+  const entrance = useRef(new Animated.Value(0)).current;
+  const event = events[0];
 
+  useEffect(() => {
+    entrance.setValue(0);
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [entrance, event?.id]);
+
+  if (!event) {
+    return (
+      <TouchableOpacity style={styles.empty} onPress={onRefresh} accessibilityRole="button">
+        <Text style={styles.emptyTitle}>Nothing to wake for yet</Text>
+        <Text style={styles.emptyAction}>Refresh calendar</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  const start = new Date(event.startMillis);
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>UPCOMING COMMITMENTS</Text>
-        <TouchableOpacity onPress={onRefresh}>
-          <Text style={styles.refreshText}>↻ Refresh</Text>
+    <Animated.View
+      style={[
+        styles.card,
+        {
+          opacity: entrance,
+          transform: [
+            {
+              translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }),
+            },
+          ],
+        },
+      ]}
+    >
+      <View style={styles.topLine}>
+        <Text style={styles.date}>{start.toLocaleDateString([], { weekday: 'long' })}</Text>
+        <TouchableOpacity onPress={onRefresh} accessibilityLabel="Refresh calendar">
+          <Text style={styles.refresh}>↻</Text>
         </TouchableOpacity>
       </View>
-
-      {events.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>No upcoming morning commitments detected.</Text>
-          <Text style={styles.emptySub}>
-            Make sure calendar permission is granted or add an event to your Google Calendar.
-          </Text>
-        </View>
-      ) : (
-        events.map((event) => (
-          <View key={event.id} style={styles.eventItem}>
-            <View style={styles.eventLeft}>
-              <Text style={styles.eventTime}>{formatEventTime(event.startMillis)}</Text>
-              <Text style={styles.eventTitle}>{event.title}</Text>
-              {event.location ? <Text style={styles.eventLoc}>📍 {event.location}</Text> : null}
-            </View>
-
-            <TouchableOpacity style={styles.planBtn} onPress={() => onGeneratePlan(event)}>
-              <Text style={styles.planBtnText}>Plan Wake</Text>
-            </TouchableOpacity>
-          </View>
-        ))
-      )}
-    </View>
+      <Text style={styles.time}>
+        {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </Text>
+      <Text style={styles.title}>{event.title}</Text>
+      {event.location ? <Text style={styles.location}>{event.location}</Text> : null}
+      <TouchableOpacity
+        style={styles.action}
+        onPress={() => onGeneratePlan(event)}
+        accessibilityRole="button"
+      >
+        <Text style={styles.actionText}>Plan my wake-up</Text>
+        <Text style={styles.arrow}>→</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 20,
-  },
-  headerRow: {
+  card: { backgroundColor: '#f5efe6', borderRadius: 28, padding: 24, marginBottom: 18 },
+  topLine: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  title: {
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+  date: { color: '#776f65', fontSize: 13, fontWeight: '700' },
+  refresh: { color: '#1f2621', fontSize: 22, fontWeight: '700' },
+  time: {
+    color: '#1f2621',
+    fontSize: 48,
+    fontWeight: '800',
+    fontFamily: 'serif',
+    letterSpacing: -2,
   },
-  refreshText: {
-    color: '#38BDF8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  emptyBox: {
-    backgroundColor: '#131C2E',
-    borderRadius: 14,
-    padding: 18,
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  emptySub: {
-    color: '#64748B',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  eventItem: {
-    backgroundColor: '#131C2E',
-    borderRadius: 14,
-    padding: 16,
+  title: { color: '#1f2621', fontSize: 22, fontWeight: '700', marginTop: 3 },
+  location: { color: '#776f65', fontSize: 14, marginTop: 5 },
+  action: {
+    backgroundColor: '#e5583d',
+    borderRadius: 17,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    marginTop: 24,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+  },
+  actionText: { color: '#fff9f0', fontSize: 16, fontWeight: '800' },
+  arrow: { color: '#fff9f0', fontSize: 22, fontWeight: '700' },
+  empty: {
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#3a443b',
+    borderRadius: 22,
+    padding: 22,
+    marginBottom: 18,
   },
-  eventLeft: {
-    flex: 1,
-    marginRight: 12,
-  },
-  eventTime: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  eventTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  eventLoc: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-  planBtn: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-  },
-  planBtnText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  emptyTitle: { color: '#f5efe6', fontSize: 17, fontWeight: '700' },
+  emptyAction: { color: '#f0a36d', fontSize: 14, marginTop: 6 },
 });

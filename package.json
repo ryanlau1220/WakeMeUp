@@ -8,6 +8,7 @@
     "agent": "cd server && pnpm dev",
     "reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3000 tcp:3000",
     "android": "react-native run-android",
+    "test": "jest --runInBand",
     "lint": "biome check src App.tsx",
     "format": "biome format --write src App.tsx",
     "start": "react-native start",

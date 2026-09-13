@@ -1,4 +1,3 @@
-import type React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { WakePlan } from '../native/WakeMeUpBridge';
 
@@ -11,283 +10,100 @@ interface Props {
   onCancel?: (planId: string) => void;
 }
 
-export const WakePlanCard: React.FC<Props> = ({
-  plan,
-  isDraft,
-  onApprove,
-  onAdjust,
-  onReject,
-  onCancel,
-}) => {
-  const formatTime = (millis: number) => {
-    if (!millis) return '--:--';
-    return new Date(millis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+function formatTime(millis: number) {
+  return new Date(millis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
-  const reasons = Array.isArray(plan.reasoningSummary)
-    ? plan.reasoningSummary
-    : typeof plan.reasoningSummary === 'string' && plan.reasoningSummary.startsWith('[')
+function reasonsFor(plan: WakePlan): string[] {
+  if (Array.isArray(plan.reasoningSummary)) return plan.reasoningSummary;
+  if (typeof plan.reasoningSummary !== 'string') return [];
+  try {
+    return plan.reasoningSummary.startsWith('[')
       ? JSON.parse(plan.reasoningSummary)
-      : [plan.reasoningSummary || 'Contextual schedule interpretation.'];
+      : [plan.reasoningSummary];
+  } catch {
+    return [];
+  }
+}
+
+export function WakePlanCard({ plan, isDraft, onApprove, onAdjust, onReject, onCancel }: Props) {
+  const reasons = reasonsFor(plan);
 
   return (
-    <View style={[styles.card, isDraft ? styles.draftBorder : styles.activeBorder]}>
-      <View style={styles.topBadgeRow}>
-        <Text style={styles.badgeText}>
-          {isDraft ? '✨ AI PROPOSED WAKE STRATEGY' : '🔒 APPROVED & SCHEDULED OFFLINE'}
-        </Text>
-        <Text style={styles.eventTime}>Event: {formatTime(plan.eventStart)}</Text>
-      </View>
+    <View style={[styles.card, isDraft ? styles.draft : styles.armed]}>
+      <Text style={styles.eyebrow}>{isDraft ? 'Wake plan' : 'Alarm set'}</Text>
+      <Text style={styles.title}>{plan.eventTitle}</Text>
+      <Text style={styles.event}>Starts {formatTime(plan.eventStart)}</Text>
 
-      <Text style={styles.eventTitle}>{plan.eventTitle}</Text>
-
-      {/* Main Timing Banner */}
-      <View style={styles.timingContainer}>
-        <View style={styles.timeBlock}>
-          <Text style={styles.timeLabel}>First Alarm</Text>
-          <Text style={styles.timeBig}>{formatTime(plan.firstAlarmAt)}</Text>
-          <Text style={styles.timeSub}>Gentle chime</Text>
+      <View style={styles.times}>
+        <View>
+          <Text style={styles.timeLabel}>Alarm</Text>
+          <Text style={styles.time}>{formatTime(plan.firstAlarmAt)}</Text>
         </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.timeBlock}>
-          <Text style={styles.timeLabel}>Wake Objective</Text>
-          <Text style={[styles.timeBig, styles.objectiveColor]}>
-            {formatTime(plan.wakeObjectiveAt)}
-          </Text>
-          <Text style={styles.timeSub}>Must be out of bed</Text>
+        <View style={styles.timeRight}>
+          <Text style={styles.timeLabel}>Out of bed</Text>
+          <Text style={styles.time}>{formatTime(plan.wakeObjectiveAt)}</Text>
         </View>
       </View>
 
-      {/* Verification Strategy */}
-      <View style={styles.verificationRow}>
-        <Text style={styles.verificationTitle}>Physical Verification:</Text>
-        <Text style={styles.verificationDetail}>
-          🚶 {plan.requiredSteps} steps (Sensor) • 📸 QR Fallback
+      <Text style={styles.method}>{plan.requiredSteps} steps · QR if needed</Text>
+      {reasons.map((reason, index) => (
+        <Text key={`${index}-${reason}`} style={styles.reason}>
+          {reason}
         </Text>
-      </View>
+      ))}
 
-      {/* Agent Reasoning */}
-      <View style={styles.reasoningBox}>
-        <Text style={styles.reasoningHeader}>Agent Reasoning:</Text>
-        {reasons.map((r: string, idx: number) => (
-          <Text key={`reason-${r.slice(0, 16)}-${idx}`} style={styles.reasonItem}>
-            • {r}
-          </Text>
-        ))}
-      </View>
-
-      {/* Human Review Actions */}
       {isDraft ? (
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.btn, styles.btnApprove]} onPress={() => onApprove(plan)}>
-            <Text style={styles.btnApproveText}>Approve Plan</Text>
+        <View style={styles.actions}>
+          <TouchableOpacity style={styles.primary} onPress={() => onApprove(plan)}>
+            <Text style={styles.primaryText}>Set alarm</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.btn, styles.btnAdjust]} onPress={() => onAdjust(plan)}>
-            <Text style={styles.btnAdjustText}>Adjust</Text>
+          <TouchableOpacity style={styles.textButton} onPress={() => onAdjust(plan)}>
+            <Text style={styles.textButtonText}>Change</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.btn, styles.btnReject]} onPress={() => onReject(plan)}>
-            <Text style={styles.btnRejectText}>Reject</Text>
+          <TouchableOpacity style={styles.textButton} onPress={() => onReject(plan)}>
+            <Text style={styles.rejectText}>Not now</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <View style={styles.activeFooter}>
-          <View style={styles.statusLive}>
-            <View style={styles.greenDot} />
-            <Text style={styles.statusLiveText}>Armed with Android AlarmManager</Text>
-          </View>
-          {onCancel && (
-            <TouchableOpacity onPress={() => onCancel(plan.id)} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <TouchableOpacity onPress={() => onCancel?.(plan.id)} style={styles.cancel}>
+          <Text style={styles.cancelText}>Cancel alarm</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#131C2E',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 1.5,
-  },
-  draftBorder: {
-    borderColor: '#38BDF8',
-  },
-  activeBorder: {
-    borderColor: '#10B981',
-  },
-  topBadgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  badgeText: {
-    color: '#38BDF8',
-    fontSize: 11,
+  card: { backgroundColor: '#202821', borderRadius: 28, padding: 24, marginBottom: 18 },
+  draft: { borderWidth: 1, borderColor: '#f0a36d' },
+  armed: { borderWidth: 1, borderColor: '#5b7660' },
+  eyebrow: {
+    color: '#f0a36d',
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  eventTime: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-  eventTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  timingContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#0B1120',
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    marginBottom: 14,
-  },
-  timeBlock: {
-    alignItems: 'center',
-  },
-  timeLabel: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  timeBig: {
-    color: '#F8FAFC',
-    fontSize: 26,
-    fontWeight: '800',
-  },
-  objectiveColor: {
-    color: '#38BDF8',
-  },
-  timeSub: {
-    color: '#64748B',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  divider: {
-    width: 1,
-    height: 40,
-    backgroundColor: '#1E293B',
-  },
-  verificationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(56, 189, 248, 0.08)',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 14,
-  },
-  verificationTitle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  verificationDetail: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  reasoningBox: {
-    backgroundColor: '#0B1120',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-  },
-  reasoningHeader: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
     textTransform: 'uppercase',
-    marginBottom: 6,
+    letterSpacing: 1,
   },
-  reasonItem: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 4,
+  title: { color: '#fff9f0', fontFamily: 'serif', fontSize: 30, fontWeight: '800', marginTop: 5 },
+  event: { color: '#b9c1b5', fontSize: 14, marginTop: 5 },
+  times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 26, marginBottom: 18 },
+  timeRight: { alignItems: 'flex-end' },
+  timeLabel: { color: '#a6afa3', fontSize: 13, marginBottom: 3 },
+  time: { color: '#fff9f0', fontFamily: 'serif', fontSize: 34, fontWeight: '800' },
+  method: { color: '#d8ded4', fontSize: 14, marginBottom: 12 },
+  reason: { color: '#a6afa3', fontSize: 13, lineHeight: 19 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 22 },
+  primary: {
+    backgroundColor: '#f0a36d',
+    borderRadius: 15,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
   },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  btn: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnApprove: {
-    flex: 2,
-    backgroundColor: '#10B981',
-  },
-  btnApproveText: {
-    color: '#000000',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  btnAdjust: {
-    flex: 1.2,
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
-  },
-  btnAdjustText: {
-    color: '#38BDF8',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  btnReject: {
-    flex: 1,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  btnRejectText: {
-    color: '#EF4444',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  activeFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 6,
-  },
-  statusLive: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  greenDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#10B981',
-    marginRight: 8,
-  },
-  statusLiveText: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-  cancelBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  cancelBtnText: {
-    color: '#EF4444',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  primaryText: { color: '#202821', fontSize: 15, fontWeight: '800' },
+  textButton: { paddingVertical: 12 },
+  textButtonText: { color: '#fff9f0', fontSize: 14, fontWeight: '700' },
+  rejectText: { color: '#a6afa3', fontSize: 14, fontWeight: '700' },
+  cancel: { marginTop: 20, alignSelf: 'flex-start' },
+  cancelText: { color: '#f0a36d', fontSize: 14, fontWeight: '700' },
 });

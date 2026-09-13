@@ -42,10 +42,20 @@ export interface WakeReadiness {
 
 export interface WakeHistoryItem {
   wakePlanId: string;
+  alarmTriggeredAt: number;
+  verifiedAt: number | null;
   attemptCount: number;
   stepsObserved: number;
   verificationMethod: string | null;
   success: boolean;
+}
+
+export interface WakeSettings {
+  prepMinutes: number;
+  travelMinutes: number;
+  safetyMargin: number;
+  qrCode: string;
+  telegramEscalationEnabled: boolean;
 }
 
 export interface StepProgressEvent {
@@ -72,6 +82,35 @@ class WakeMeUpBridge {
   async getUpcomingEvents(lookaheadHours = 24): Promise<CalendarEvent[]> {
     if (!WakeMeUpModule) return [];
     return await WakeMeUpModule.getUpcomingEvents(lookaheadHours);
+  }
+
+  async getAgentServerUrl(): Promise<string> {
+    if (!WakeMeUpModule) return 'http://localhost:3000';
+    return await WakeMeUpModule.getAgentServerUrl();
+  }
+
+  async getWakeSettings(): Promise<WakeSettings> {
+    if (!WakeMeUpModule) {
+      return {
+        prepMinutes: 25,
+        travelMinutes: 30,
+        safetyMargin: 10,
+        qrCode: 'WAKEMEUP_BATHROOM_QR',
+        telegramEscalationEnabled: false,
+      };
+    }
+    return await WakeMeUpModule.getWakeSettings();
+  }
+
+  async saveWakeSettings(settings: WakeSettings): Promise<void> {
+    if (!WakeMeUpModule) return;
+    await WakeMeUpModule.saveWakeSettings(
+      settings.prepMinutes,
+      settings.travelMinutes,
+      settings.safetyMargin,
+      settings.qrCode,
+      settings.telegramEscalationEnabled,
+    );
   }
 
   async getWakeReadiness(): Promise<WakeReadiness> {

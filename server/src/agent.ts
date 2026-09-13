@@ -85,7 +85,7 @@ Return ONLY a valid JSON object matching this schema:
     currentTimeMillis: Date.now(),
     upcomingEvents: events,
     userPreferences: preferences || { prepMinutes: 25, travelMinutes: 30, safetyMargin: 10 },
-    recentWakeHistory: history || [],
+    recentWakeHistory: Array.isArray(history) ? history.slice(0, 10) : [],
     userFeedback: feedback || '',
   });
 
@@ -109,7 +109,7 @@ Return ONLY a valid JSON object matching this schema:
     return validateWakePlan(JSON.parse(content), events);
   } catch {
     console.warn('[Agent] Unsafe response; using deterministic safe timing.')
-    return createSafeWakePlan(events[0], preferences)
+    return validateWakePlan(createSafeWakePlan(events[0], preferences), events)
   }
 }
 

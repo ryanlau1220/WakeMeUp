@@ -30,14 +30,19 @@ function isFiniteInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
 }
 
+function isShortText(value: unknown, maxLength: number): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= maxLength
+}
+
 export function isCalendarEventPayload(value: unknown): value is CalendarEventPayload {
   if (!value || typeof value !== 'object') return false
   const event = value as Record<string, unknown>
   return (
-    typeof event.id === 'string' &&
-    typeof event.title === 'string' &&
+    isShortText(event.id, 200) &&
+    isShortText(event.title, 200) &&
     isFiniteInteger(event.startMillis) &&
     isFiniteInteger(event.endMillis) &&
+    event.startMillis < event.endMillis &&
     typeof event.isAllDay === 'boolean'
   )
 }
@@ -94,6 +99,7 @@ export function validateWakePlan(
 export function createSafeWakePlan(
   event: CalendarEventPayload,
   preferences: WakePreferences = {},
+  now = Date.now(),
 ): WakePlanResult {
   const minutes = (value: unknown, fallback: number): number =>
     typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 180
@@ -102,21 +108,37 @@ export function createSafeWakePlan(
   const prepMinutes = minutes(preferences.prepMinutes, 25)
   const travelMinutes = minutes(preferences.travelMinutes, 30)
   const safetyMargin = minutes(preferences.safetyMargin, 10)
-  const wakeObjectiveAt = event.startMillis - (prepMinutes + travelMinutes + safetyMargin) * 60_000
+  const preferredWakeObjectiveAt =
+    event.startMillis - (prepMinutes + travelMinutes + safetyMargin) * 60_000
+  const preferredFirstAlarmAt = preferredWakeObjectiveAt - 5 * 60_000
+  const earliestFirstAlarmAt = now + 60_000
+  const needsImmediateRecovery = preferredFirstAlarmAt <= now
+  const firstAlarmAt = needsImmediateRecovery ? earliestFirstAlarmAt : preferredFirstAlarmAt
+  const wakeObjectiveAt = needsImmediateRecovery
+    ? Math.min(event.startMillis - 60_000, firstAlarmAt + 60_000)
+    : preferredWakeObjectiveAt
+
+  if (firstAlarmAt >= wakeObjectiveAt) {
+    throw new Error('This commitment starts too soon to schedule a safe wake plan.')
+  }
 
   return {
     eventId: event.id,
     eventTitle: event.title,
     eventStart: event.startMillis,
     wakeObjectiveAt,
-    firstAlarmAt: wakeObjectiveAt - 5 * 60_000,
+    firstAlarmAt,
     requiredSteps: 15,
     gracePeriodSeconds: 180,
     retryLimit: 2,
     reasoningSummary: [
-      `Standard ${travelMinutes}-minute travel allowance`,
-      `${prepMinutes} minutes to prepare plus ${safetyMargin} minutes of margin`,
-      'Used safe default timing because the agent response could not be scheduled',
+      needsImmediateRecovery
+        ? 'The commitment is close, so the alarm starts immediately'
+        : `Standard ${travelMinutes}-minute travel allowance`,
+      needsImmediateRecovery
+        ? 'Preparation and travel time must be shortened for this commitment'
+        : `${prepMinutes} minutes to prepare plus ${safetyMargin} minutes of margin`,
+      'Used safe timing because the agent response could not be scheduled',
     ],
   }
 }

@@ -11,7 +11,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '32kb' }));
 
 const PORT = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
 
@@ -63,6 +63,13 @@ app.post('/api/telegram/escalate', async (req: Request, res: Response) => {
   let chatId = process.env.TELEGRAM_CHAT_ID;
   const { planTitle, message } = req.body;
 
+  if (
+    (planTitle !== undefined && (typeof planTitle !== 'string' || planTitle.length > 200)) ||
+    (message !== undefined && (typeof message !== 'string' || message.length > 500))
+  ) {
+    return res.status(400).json({ error: 'Escalation content is invalid.' });
+  }
+
   if (!token) {
     return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN not configured in .env' });
   }
@@ -83,7 +90,7 @@ app.post('/api/telegram/escalate', async (req: Request, res: Response) => {
         .json({ error: 'No chat ID found. Please send a message to @WakeMeUpBot first.' });
     }
 
-    const text = `🚨 *Wake Me Up Alert*\n\nWake objective failed verification for commitment: *${planTitle || 'Early Commitment'}*.\n\n${message || 'The user did not complete step verification after multiple alarm attempts.'}`;
+    const text = `🚨 Wake Me Up Alert\n\nWake objective failed verification for commitment: ${planTitle || 'Early Commitment'}.\n\n${message || 'The user did not complete step verification after multiple alarm attempts.'}`;
 
     const sendRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -91,7 +98,6 @@ app.post('/api/telegram/escalate', async (req: Request, res: Response) => {
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: 'Markdown',
       }),
     });
 
