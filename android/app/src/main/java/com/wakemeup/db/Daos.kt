@@ -56,3 +56,18 @@ interface PlanFeedbackDao {
     @Query("SELECT * FROM plan_feedbacks ORDER BY createdAt DESC")
     suspend fun getAllFeedbacks(): List<PlanFeedbackEntity>
 }
+
+@Dao
+interface PendingEscalationDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(escalation: PendingEscalationEntity)
+
+    @Query("SELECT * FROM pending_escalations WHERE status = 'PENDING' ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun getPending(limit: Int): List<PendingEscalationEntity>
+
+    @Query("UPDATE pending_escalations SET status = 'SENT' WHERE id = :id")
+    suspend fun markSent(id: String)
+
+    @Query("UPDATE pending_escalations SET attempts = attempts + 1 WHERE id = :id")
+    suspend fun markAttempted(id: String)
+}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Alert,
+  AppState,
   Easing,
   Image,
   Modal,
@@ -23,6 +24,7 @@ import { VerificationActiveCard } from './src/components/VerificationActiveCard'
 import { WakePlanCard } from './src/components/WakePlanCard';
 import { WakeReadinessCard } from './src/components/WakeReadinessCard';
 import { createManualWakePlan } from './src/manualAlarm';
+import { CopilotKitProvider, useAgentContext } from '@copilotkit/react-native/headless';
 import {
   Bridge,
   type CalendarEvent,
@@ -54,7 +56,13 @@ function FooterIcon({ icon, active }: { icon: TabIconName; active: boolean }) {
   const color = active ? '#f0a36d' : '#839080';
 
   if (icon === 'home') return <Text style={[styles.homeIcon, { color }]}>⌂</Text>;
-  if (icon === 'history') return <Text style={[styles.historyIcon, { color }]}>↺</Text>;
+  if (icon === 'history') {
+    return (
+      <View style={styles.historyIconFrame}>
+        <Text style={[styles.historyIcon, { color }]}>↺</Text>
+      </View>
+    );
+  }
   if (icon === 'settings') {
     return (
       <View style={styles.sliderIcon}>
@@ -94,7 +102,40 @@ function formatManualTime(hour: string, minute: string) {
   return time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function App() {
+function CopilotWakeContext({
+  plan,
+  settings,
+}: {
+  plan: WakePlan | null;
+  settings: WakeSettings;
+}) {
+  useAgentContext({
+    description: 'The current Wake Me Up plan and preferences for plan review or adjustment.',
+    value: plan
+      ? {
+          eventTitle: plan.eventTitle,
+          eventStart: plan.eventStart,
+          wakeObjectiveAt: plan.wakeObjectiveAt,
+          firstAlarmAt: plan.firstAlarmAt,
+          requiredSteps: plan.requiredSteps,
+          preferences: {
+            prepMinutes: settings.prepMinutes,
+            travelMinutes: settings.travelMinutes,
+            safetyMargin: settings.safetyMargin,
+          },
+        }
+      : {
+          preferences: {
+            prepMinutes: settings.prepMinutes,
+            travelMinutes: settings.travelMinutes,
+            safetyMargin: settings.safetyMargin,
+          },
+        },
+  });
+  return null;
+}
+
+function WakeMeUpApp() {
   const [readiness, setReadiness] = useState<WakeReadiness | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [activePlan, setActivePlan] = useState<WakePlan | null>(null);
@@ -106,6 +147,7 @@ export default function App() {
   const [wakeSettings, setWakeSettings] = useState<WakeSettings>(defaultWakeSettings);
   const wakeSettingsRef = useRef(wakeSettings);
   const cancelUndoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const escalationRetryInFlight = useRef(false);
   const successScale = useRef(new Animated.Value(0)).current;
   const successSpin = useRef(new Animated.Value(0)).current;
   const [wakeHistory, setWakeHistory] = useState<
@@ -136,6 +178,13 @@ export default function App() {
   useEffect(() => {
     initApp();
     return setupEventListeners();
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void retryPendingEscalations();
+    });
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {
@@ -197,6 +246,7 @@ export default function App() {
     setWakeSettings(settings);
     setSettingsDraft(settings);
     await refreshState();
+    await retryPendingEscalations();
   };
 
   const refreshState = async () => {
@@ -253,7 +303,8 @@ export default function App() {
 
     const subEscalated = Bridge.onEscalated((data) => {
       if (!wakeSettingsRef.current.telegramEscalationEnabled) return;
-      void sendTelegramEscalation(
+      void sendOrQueueEscalation(
+        data.planId,
         data.eventTitle,
         `Wake plan ${data.planId} remained unverified after all alarm retries.`,
       );
@@ -282,6 +333,25 @@ export default function App() {
       Alert.alert('Agent Error', err.message || 'Failed to generate wake plan from agent.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const sendOrQueueEscalation = async (planId: string, planTitle: string, message: string) => {
+    const result = await sendTelegramEscalation(planTitle, message);
+    if (!result.ok) await Bridge.queueEscalation(planId, planTitle, message);
+  };
+
+  const retryPendingEscalations = async () => {
+    if (escalationRetryInFlight.current) return;
+    escalationRetryInFlight.current = true;
+    try {
+      const pending = await Bridge.getPendingEscalations();
+      for (const entry of pending) {
+        const result = await sendTelegramEscalation(entry.planTitle, entry.message);
+        await Bridge.resolvePendingEscalation(entry.id, result.ok);
+      }
+    } finally {
+      escalationRetryInFlight.current = false;
     }
   };
 
@@ -457,6 +527,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
+        <CopilotWakeContext plan={draftPlan} settings={wakeSettings} />
         <StatusBar barStyle="light-content" />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.header}>
@@ -549,14 +620,41 @@ export default function App() {
               {wakeHistory.length ? (
                 <View style={styles.historyCard}>
                   {wakeHistory.map((entry) => (
-                    <Text
+                    <View
                       key={`${entry.wakePlanId}-${entry.alarmTriggeredAt}`}
-                      style={styles.historyItem}
+                      style={styles.historyEntry}
                     >
-                      {entry.success ? '✓ Verified' : '• Unverified'} · {entry.attemptCount} attempt
-                      {entry.attemptCount === 1 ? '' : 's'} ·{' '}
-                      {new Date(entry.alarmTriggeredAt).toLocaleDateString()}
-                    </Text>
+                      <View style={styles.historyEntryTop}>
+                        <Text style={styles.historyEvent} numberOfLines={1}>
+                          {entry.eventTitle}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.historyStatus,
+                            entry.success ? styles.historySuccess : styles.historyFailed,
+                          ]}
+                        >
+                          {entry.success ? 'Verified' : 'Missed'}
+                        </Text>
+                      </View>
+                      <Text style={styles.historyMeta}>
+                        {new Date(entry.alarmTriggeredAt).toLocaleDateString([], {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}{' '}
+                        ·{' '}
+                        {new Date(entry.alarmTriggeredAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      <Text style={styles.historyDetail}>
+                        {entry.success
+                          ? `${entry.verificationMethod === 'QR' || entry.qrUsed ? 'QR scan' : `${entry.stepsObserved} steps`} · ${entry.attemptCount} ${entry.attemptCount === 1 ? 'attempt' : 'attempts'}`
+                          : `${entry.stepsObserved} steps · verification timed out`}
+                      </Text>
+                    </View>
                   ))}
                 </View>
               ) : (
@@ -880,6 +978,22 @@ export default function App() {
   );
 }
 
+export default function App() {
+  const [runtimeUrl, setRuntimeUrl] = useState('http://localhost:3000/api/copilotkit');
+
+  useEffect(() => {
+    void Bridge.getAgentServerUrl().then((url) =>
+      setRuntimeUrl(`${url.replace(/\/+$/, '')}/api/copilotkit`),
+    );
+  }, []);
+
+  return (
+    <CopilotKitProvider runtimeUrl={runtimeUrl} useSingleEndpoint={false}>
+      <WakeMeUpApp />
+    </CopilotKitProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -970,18 +1084,30 @@ const styles = StyleSheet.create({
     padding: 22,
   },
   historyCard: {
-    marginBottom: 16,
+    gap: 10,
   },
-  historyTitle: {
-    color: '#8f9a8d',
-    fontSize: 13,
-    fontWeight: '800',
-    marginBottom: 8,
+  historyEntry: {
+    backgroundColor: '#202821',
+    borderColor: '#374538',
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
   },
-  historyItem: {
+  historyEntryTop: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  historyEvent: { color: '#f5efe6', flex: 1, fontSize: 16, fontWeight: '800' },
+  historyStatus: { fontSize: 12, fontWeight: '800' },
+  historySuccess: { color: '#8fcb9f' },
+  historyFailed: { color: '#f0a36d' },
+  historyMeta: { color: '#a6afa3', fontSize: 13, marginTop: 5 },
+  historyDetail: {
     color: '#d8ded4',
     fontSize: 13,
-    lineHeight: 20,
+    marginTop: 9,
   },
   modalOverlay: {
     flex: 1,
@@ -1144,9 +1270,16 @@ const styles = StyleSheet.create({
     lineHeight: 35,
   },
   historyIcon: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: '700',
-    lineHeight: 37,
+    lineHeight: 32,
+    transform: [{ translateY: -1 }],
+  },
+  historyIconFrame: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   clockIcon: {
     width: 30,

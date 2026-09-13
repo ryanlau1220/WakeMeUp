@@ -26,6 +26,7 @@ import com.wakemeup.alarm.AlarmScheduler
 import com.wakemeup.calendar.CalendarReader
 import com.wakemeup.db.AppDatabase
 import com.wakemeup.db.PlanFeedbackEntity
+import com.wakemeup.db.PendingEscalationEntity
 import com.wakemeup.db.WakeOutcomeEntity
 import com.wakemeup.db.WakePlanEntity
 import kotlinx.coroutines.CoroutineScope
@@ -392,19 +393,84 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun queueEscalation(planId: String, planTitle: String, message: String, promise: Promise) {
+        if (planId.isBlank() || planTitle.length > 200 || message.length > 500) {
+            promise.reject("INVALID_ESCALATION", "Invalid escalation content.")
+            return
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val entry = PendingEscalationEntity(
+                    id = UUID.randomUUID().toString(),
+                    wakePlanId = planId,
+                    planTitle = planTitle,
+                    message = message,
+                )
+                db.pendingEscalationDao().insert(entry)
+                withContext(Dispatchers.Main) { promise.resolve(entry.id) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { promise.reject("ESCALATION_QUEUE_ERROR", e.message, e) }
+            }
+        }
+    }
+
+    @ReactMethod
+    fun getPendingEscalations(limit: Int, promise: Promise) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val entries = db.pendingEscalationDao().getPending(limit.coerceIn(1, 10))
+                val result = Arguments.createArray().apply {
+                    entries.forEach { entry ->
+                        pushMap(Arguments.createMap().apply {
+                            putString("id", entry.id)
+                            putString("wakePlanId", entry.wakePlanId)
+                            putString("planTitle", entry.planTitle)
+                            putString("message", entry.message)
+                            putInt("attempts", entry.attempts)
+                        })
+                    }
+                }
+                withContext(Dispatchers.Main) { promise.resolve(result) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { promise.reject("ESCALATION_QUEUE_ERROR", e.message, e) }
+            }
+        }
+    }
+
+    @ReactMethod
+    fun resolvePendingEscalation(id: String, delivered: Boolean, promise: Promise) {
+        if (id.isBlank()) {
+            promise.reject("INVALID_ESCALATION", "Invalid escalation id.")
+            return
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (delivered) db.pendingEscalationDao().markSent(id)
+                else db.pendingEscalationDao().markAttempted(id)
+                withContext(Dispatchers.Main) { promise.resolve(null) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { promise.reject("ESCALATION_QUEUE_ERROR", e.message, e) }
+            }
+        }
+    }
+
+    @ReactMethod
     fun getRecentWakeHistory(limit: Int, promise: Promise) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val entries = db.wakeOutcomeDao().getAllOutcomes().take(limit.coerceIn(1, 20))
                 val array = Arguments.createArray()
                 entries.forEach { outcome ->
+                    val planTitle = db.wakePlanDao().getPlanById(outcome.wakePlanId)?.eventTitle ?: "Wake plan"
                     array.pushMap(Arguments.createMap().apply {
                         putString("wakePlanId", outcome.wakePlanId)
+                        putString("eventTitle", planTitle)
                         putDouble("alarmTriggeredAt", outcome.alarmTriggeredAt.toDouble())
                         if (outcome.verifiedAt != null) putDouble("verifiedAt", outcome.verifiedAt.toDouble()) else putNull("verifiedAt")
                         putInt("attemptCount", outcome.attemptCount)
                         putInt("stepsObserved", outcome.stepsObserved)
                         putString("verificationMethod", outcome.verificationMethod)
+                        putBoolean("qrUsed", outcome.qrUsed)
                         putBoolean("success", outcome.success)
                     })
                 }

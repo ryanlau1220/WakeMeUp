@@ -42,12 +42,22 @@ export interface WakeReadiness {
 
 export interface WakeHistoryItem {
   wakePlanId: string;
+  eventTitle: string;
   alarmTriggeredAt: number;
   verifiedAt: number | null;
   attemptCount: number;
   stepsObserved: number;
   verificationMethod: string | null;
+  qrUsed: boolean;
   success: boolean;
+}
+
+export interface PendingEscalation {
+  id: string;
+  wakePlanId: string;
+  planTitle: string;
+  message: string;
+  attempts: number;
 }
 
 export interface WakeSettings {
@@ -186,6 +196,25 @@ class WakeMeUpBridge {
   async cancelPlan(planId: string): Promise<boolean> {
     if (!WakeMeUpModule) return false;
     return await WakeMeUpModule.cancelPlan(planId);
+  }
+
+  async queueEscalation(
+    planId: string,
+    planTitle: string,
+    message: string,
+  ): Promise<string | null> {
+    if (!WakeMeUpModule) return null;
+    return await WakeMeUpModule.queueEscalation(planId, planTitle, message);
+  }
+
+  async getPendingEscalations(limit = 10): Promise<PendingEscalation[]> {
+    if (!WakeMeUpModule) return [];
+    return await WakeMeUpModule.getPendingEscalations(limit);
+  }
+
+  async resolvePendingEscalation(id: string, delivered: boolean): Promise<void> {
+    if (!WakeMeUpModule) return;
+    await WakeMeUpModule.resolvePendingEscalation(id, delivered);
   }
 
   async verifyQrCode(scannedCode: string, expectedCode: string, planId: string): Promise<boolean> {

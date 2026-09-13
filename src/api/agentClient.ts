@@ -46,7 +46,8 @@ export async function sendTelegramEscalation(planTitle: string, message: string)
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ planTitle, message }),
     });
-    return await res.json();
+    const data = await res.json();
+    return { ok: res.ok && data.ok === true, error: data.error as string | undefined };
   } catch (err: any) {
     console.warn('Telegram alert failed:', err);
     return { ok: false, error: err?.message || String(err) };

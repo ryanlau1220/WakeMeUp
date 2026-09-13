@@ -14,10 +14,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const isOpenRouter =
+export const isOpenRouter =
   !!process.env.OPENROUTER_API_KEY ||
   (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith('sk-or-'));
-const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+export const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
 
 const openai = new OpenAI({
   apiKey,
@@ -30,7 +30,7 @@ const openai = new OpenAI({
     : undefined,
 });
 
-const MODEL = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
+export const MODEL = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
 
 export type { WakePreferences } from './wakePlan.js';
 import type { WakePreferences } from './wakePlan.js';

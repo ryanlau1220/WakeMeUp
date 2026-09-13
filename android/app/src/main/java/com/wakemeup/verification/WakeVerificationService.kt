@@ -173,7 +173,7 @@ class WakeVerificationService : Service() {
                     wakePlanId = planId,
                     alarmTriggeredAt = System.currentTimeMillis() - (gracePeriodSec * 1000L),
                     firstDismissedAt = System.currentTimeMillis() - (currentSteps * 1000L),
-                    attemptCount = 1,
+                    attemptCount = attempt,
                     verifiedAt = System.currentTimeMillis(),
                     verificationMethod = "STEPS",
                     stepsObserved = currentSteps,

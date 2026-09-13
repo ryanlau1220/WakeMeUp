@@ -3,7 +3,9 @@ import { fileURLToPath } from 'url';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
-import { chatWithAgent, generateWakePlan } from './agent.js';
+import { BuiltInAgent, CopilotRuntime } from '@copilotkit/runtime/v2';
+import { createCopilotExpressHandler } from '@copilotkit/runtime/v2/express';
+import { apiKey, chatWithAgent, generateWakePlan, isOpenRouter, MODEL } from './agent.js';
 import { isCalendarEventPayload } from './wakePlan.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -13,6 +15,27 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '32kb' }));
+
+if (isOpenRouter) process.env.OPENAI_BASE_URL ||= 'https://openrouter.ai/api/v1';
+const copilotRuntime = new CopilotRuntime({
+  agents: {
+    default: new BuiltInAgent({
+      model: isOpenRouter ? `openai:${MODEL}` : MODEL.replace('/', ':'),
+      apiKey,
+      prompt:
+        'You are Wake Me Up. Use the provided plan context to help the user review or adjust it. ' +
+        'Never schedule an alarm; Android schedules only an explicitly approved plan.',
+      maxOutputTokens: 400,
+    }),
+  },
+});
+app.use(
+  createCopilotExpressHandler({
+    runtime: copilotRuntime,
+    basePath: '/api/copilotkit',
+    cors: false,
+  }),
+);
 
 const PORT = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
 
