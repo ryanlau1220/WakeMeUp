@@ -3,9 +3,12 @@ package com.wakemeup.bridge
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
+import android.provider.Settings
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.BatteryManager
+import android.os.Build
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -88,6 +91,12 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
             val hasStepSensor = stepSensor != null
 
             val canScheduleExact = alarmScheduler.canScheduleExactAlarms()
+            val canUseFullScreenIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                (reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                    .canUseFullScreenIntent()
+            } else {
+                true
+            }
             val hasCalendarPermission = calendarReader.hasCalendarPermission()
 
             val map = Arguments.createMap().apply {
@@ -95,12 +104,51 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
                 putBoolean("isCharging", isCharging)
                 putBoolean("hasStepSensor", hasStepSensor)
                 putBoolean("canScheduleExactAlarm", canScheduleExact)
+                putBoolean("canUseFullScreenIntent", canUseFullScreenIntent)
                 putBoolean("hasCalendarPermission", hasCalendarPermission)
                 putBoolean("isReadyOffline", true)
             }
             promise.resolve(map)
         } catch (e: Exception) {
             promise.reject("READINESS_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun requestExactAlarmPermission(promise: Promise) {
+        try {
+            if (alarmScheduler.canScheduleExactAlarms()) {
+                promise.resolve(true)
+                return
+            }
+            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:${reactContext.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactContext.startActivity(intent)
+            promise.resolve(false)
+        } catch (e: Exception) {
+            promise.reject("EXACT_ALARM_PERMISSION_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun requestFullScreenIntentPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                (reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                    .canUseFullScreenIntent()) {
+                promise.resolve(true)
+                return
+            }
+            val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                data = Uri.parse("package:${reactContext.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactContext.startActivity(intent)
+            promise.resolve(false)
+        } catch (e: Exception) {
+            promise.reject("FULL_SCREEN_PERMISSION_ERROR", e.message, e)
         }
     }
 
@@ -226,6 +274,8 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
             try {
                 val matches = scannedCode.trim() == expectedCode.trim() || scannedCode.contains("WAKEMEUP")
                 if (matches) {
+                    alarmScheduler.cancelAlarm(planId)
+                    reactContext.stopService(Intent(reactContext, com.wakemeup.verification.WakeVerificationService::class.java))
                     db.wakePlanDao().updateStatus(planId, "VERIFIED")
                     db.wakeOutcomeDao().insert(
                         WakeOutcomeEntity(

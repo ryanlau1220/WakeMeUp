@@ -21,7 +21,10 @@ class AlarmScheduler(private val context: Context) {
         }
     }
 
-    fun scheduleWakePlan(plan: WakePlanEntity) {
+    fun scheduleWakePlan(plan: WakePlanEntity, attempt: Int = 1) {
+        check(canScheduleExactAlarms()) {
+            "Exact alarms are not permitted. Grant Alarms & reminders access before scheduling."
+        }
         val triggerTime = plan.firstAlarmAt
         val now = System.currentTimeMillis()
 
@@ -33,6 +36,8 @@ class AlarmScheduler(private val context: Context) {
             putExtra(AlarmReceiver.EXTRA_EVENT_TITLE, plan.eventTitle)
             putExtra(AlarmReceiver.EXTRA_REQUIRED_STEPS, plan.requiredSteps)
             putExtra(AlarmReceiver.EXTRA_GRACE_PERIOD_SEC, plan.gracePeriodSeconds)
+            putExtra(AlarmReceiver.EXTRA_RETRY_LIMIT, plan.retryLimit)
+            putExtra(AlarmReceiver.EXTRA_ATTEMPT, attempt)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(

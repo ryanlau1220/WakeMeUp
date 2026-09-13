@@ -35,6 +35,7 @@ export interface WakeReadiness {
   isCharging: boolean;
   hasStepSensor: boolean;
   canScheduleExactAlarm: boolean;
+  canUseFullScreenIntent: boolean;
   hasCalendarPermission: boolean;
   isReadyOffline: boolean;
 }
@@ -72,6 +73,7 @@ class WakeMeUpBridge {
         isCharging: true,
         hasStepSensor: true,
         canScheduleExactAlarm: true,
+        canUseFullScreenIntent: true,
         hasCalendarPermission: false,
         isReadyOffline: true,
       };
@@ -88,6 +90,16 @@ class WakeMeUpBridge {
         : plan.reasoningSummary || '',
     };
     return await WakeMeUpModule.saveAndSchedulePlan(formatted);
+  }
+
+  async requestExactAlarmPermission(): Promise<boolean> {
+    if (!WakeMeUpModule) return false;
+    return await WakeMeUpModule.requestExactAlarmPermission();
+  }
+
+  async requestFullScreenIntentPermission(): Promise<boolean> {
+    if (!WakeMeUpModule) return false;
+    return await WakeMeUpModule.requestFullScreenIntentPermission();
   }
 
   async getActivePlan(): Promise<WakePlan | null> {

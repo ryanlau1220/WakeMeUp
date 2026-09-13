@@ -140,6 +140,25 @@ export default function App() {
 
   const handleApprovePlan = async (plan: WakePlan) => {
     try {
+      const currentReadiness = await Bridge.getWakeReadiness();
+      if (!currentReadiness.canScheduleExactAlarm) {
+        await Bridge.requestExactAlarmPermission();
+        Alert.alert(
+          'Allow exact alarms',
+          'Grant Alarms & reminders access in Android Settings, then approve this Wake Plan again.',
+        );
+        await refreshState();
+        return;
+      }
+      if (!currentReadiness.canUseFullScreenIntent) {
+        await Bridge.requestFullScreenIntentPermission();
+        Alert.alert(
+          'Allow full-screen alarms',
+          'Allow full-screen notifications in Android Settings, then approve this Wake Plan again.',
+        );
+        await refreshState();
+        return;
+      }
       await Bridge.saveAndSchedulePlan(plan);
       setDraftPlan(null);
       await refreshState();

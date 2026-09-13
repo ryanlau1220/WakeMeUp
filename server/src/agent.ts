@@ -2,6 +2,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import {
+  isCalendarEventPayload,
+  type CalendarEventPayload,
+  type WakePlanResult,
+  validateWakePlan,
+} from './wakePlan.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,32 +31,10 @@ const openai = new OpenAI({
 
 const MODEL = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
 
-export interface CalendarEventPayload {
-  id: string;
-  title: string;
-  startMillis: number;
-  endMillis: number;
-  isAllDay: boolean;
-  location?: string;
-  description?: string;
-}
-
 export interface WakePreferences {
   prepMinutes?: number;
   travelMinutes?: number;
   safetyMargin?: number;
-}
-
-export interface WakePlanResult {
-  eventId: string;
-  eventTitle: string;
-  eventStart: number;
-  wakeObjectiveAt: number;
-  firstAlarmAt: number;
-  requiredSteps: number;
-  gracePeriodSeconds: number;
-  retryLimit: number;
-  reasoningSummary: string[];
 }
 
 export async function generateWakePlan({
@@ -62,6 +46,9 @@ export async function generateWakePlan({
   preferences?: WakePreferences;
   history?: any[];
 }): Promise<WakePlanResult> {
+  if (!Array.isArray(events) || events.length === 0 || !events.every(isCalendarEventPayload)) {
+    throw new Error('Select an upcoming commitment before generating a wake plan.')
+  }
   const systemPrompt = `You are Wake Me Up, an intelligent morning scheduling agent.
 Your mission:
 Analyze the user's upcoming calendar commitments and determine the optimal wake plan.
@@ -114,7 +101,7 @@ Return ONLY a valid JSON object matching this schema:
   if (!content) {
     throw new Error('No response content received from agent model');
   }
-  return JSON.parse(content) as WakePlanResult;
+  return validateWakePlan(JSON.parse(content), events);
 }
 
 export async function chatWithAgent({

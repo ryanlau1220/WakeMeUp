@@ -37,6 +37,8 @@ class AlarmActivity : Activity() {
     private var eventTitle: String = ""
     private var requiredSteps: Int = 15
     private var gracePeriodSec: Int = 180
+    private var retryLimit: Int = 2
+    private var attempt: Int = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +57,10 @@ class AlarmActivity : Activity() {
         eventTitle = intent.getStringExtra(AlarmReceiver.EXTRA_EVENT_TITLE) ?: "Upcoming Commitment"
         requiredSteps = intent.getIntExtra(AlarmReceiver.EXTRA_REQUIRED_STEPS, 15)
         gracePeriodSec = intent.getIntExtra(AlarmReceiver.EXTRA_GRACE_PERIOD_SEC, 180)
+        retryLimit = intent.getIntExtra(AlarmReceiver.EXTRA_RETRY_LIMIT, 2)
+        attempt = intent.getIntExtra(AlarmReceiver.EXTRA_ATTEMPT, 1)
+
+        AlarmReceiver.cancelAlarmNotification(this)
 
         buildUi()
         startAlarmAudioAndVibration()
@@ -184,6 +190,8 @@ class AlarmActivity : Activity() {
             putExtra(WakeVerificationService.EXTRA_PLAN_ID, planId)
             putExtra(WakeVerificationService.EXTRA_REQUIRED_STEPS, requiredSteps)
             putExtra(WakeVerificationService.EXTRA_GRACE_PERIOD_SEC, gracePeriodSec)
+            putExtra(WakeVerificationService.EXTRA_RETRY_LIMIT, retryLimit)
+            putExtra(WakeVerificationService.EXTRA_ATTEMPT, attempt)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
 
