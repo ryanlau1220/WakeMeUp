@@ -20,6 +20,12 @@ export interface WakePlanResult {
   reasoningSummary: string[];
 }
 
+export interface WakePreferences {
+  prepMinutes?: number;
+  travelMinutes?: number;
+  safetyMargin?: number;
+}
+
 function isFiniteInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
 }
@@ -82,5 +88,35 @@ export function validateWakePlan(
     gracePeriodSeconds: plan.gracePeriodSeconds as number,
     retryLimit: plan.retryLimit as number,
     reasoningSummary: plan.reasoningSummary as string[],
+  }
+}
+
+export function createSafeWakePlan(
+  event: CalendarEventPayload,
+  preferences: WakePreferences = {},
+): WakePlanResult {
+  const minutes = (value: unknown, fallback: number): number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 180
+      ? value
+      : fallback
+  const prepMinutes = minutes(preferences.prepMinutes, 25)
+  const travelMinutes = minutes(preferences.travelMinutes, 30)
+  const safetyMargin = minutes(preferences.safetyMargin, 10)
+  const wakeObjectiveAt = event.startMillis - (prepMinutes + travelMinutes + safetyMargin) * 60_000
+
+  return {
+    eventId: event.id,
+    eventTitle: event.title,
+    eventStart: event.startMillis,
+    wakeObjectiveAt,
+    firstAlarmAt: wakeObjectiveAt - 5 * 60_000,
+    requiredSteps: 15,
+    gracePeriodSeconds: 180,
+    retryLimit: 2,
+    reasoningSummary: [
+      `Standard ${travelMinutes}-minute travel allowance`,
+      `${prepMinutes} minutes to prepare plus ${safetyMargin} minutes of margin`,
+      'Used safe default timing because the agent response could not be scheduled',
+    ],
   }
 }

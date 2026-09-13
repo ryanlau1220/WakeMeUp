@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateWakePlan } from './wakePlan.js';
+import { createSafeWakePlan, validateWakePlan } from './wakePlan.js';
 
 const event = {
   id: 'class-1',
@@ -27,4 +27,10 @@ test('rejects an alarm that is not before its commitment', () => {
       event.startMillis - 10_000,
     ),
   )
+})
+
+test('creates a scheduleable fallback plan', () => {
+  const plan = createSafeWakePlan(event)
+  assert.ok(plan.firstAlarmAt < plan.wakeObjectiveAt)
+  assert.ok(plan.wakeObjectiveAt < plan.eventStart)
 })

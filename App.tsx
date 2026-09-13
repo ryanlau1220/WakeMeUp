@@ -152,27 +152,32 @@ export default function App() {
     }
   };
 
+  const ensureAlarmPermissions = async () => {
+    const currentReadiness = await Bridge.getWakeReadiness();
+    if (!currentReadiness.canScheduleExactAlarm) {
+      await Bridge.requestExactAlarmPermission();
+      Alert.alert(
+        'Allow exact alarms',
+        'Grant Alarms & reminders access in Android Settings, then try again.',
+      );
+      await refreshState();
+      return false;
+    }
+    if (!currentReadiness.canUseFullScreenIntent) {
+      await Bridge.requestFullScreenIntentPermission();
+      Alert.alert(
+        'Allow full-screen alarms',
+        'Allow full-screen notifications in Android Settings, then try again.',
+      );
+      await refreshState();
+      return false;
+    }
+    return true;
+  };
+
   const handleApprovePlan = async (plan: WakePlan) => {
     try {
-      const currentReadiness = await Bridge.getWakeReadiness();
-      if (!currentReadiness.canScheduleExactAlarm) {
-        await Bridge.requestExactAlarmPermission();
-        Alert.alert(
-          'Allow exact alarms',
-          'Grant Alarms & reminders access in Android Settings, then approve this Wake Plan again.',
-        );
-        await refreshState();
-        return;
-      }
-      if (!currentReadiness.canUseFullScreenIntent) {
-        await Bridge.requestFullScreenIntentPermission();
-        Alert.alert(
-          'Allow full-screen alarms',
-          'Allow full-screen notifications in Android Settings, then approve this Wake Plan again.',
-        );
-        await refreshState();
-        return;
-      }
+      if (!(await ensureAlarmPermissions())) return;
       await Bridge.saveAndSchedulePlan(plan);
       await Bridge.savePlanFeedback(plan.id, 'APPROVED');
       setDraftPlan(null);
@@ -199,6 +204,7 @@ export default function App() {
 
   const handleTriggerDemo = async (delaySeconds: number) => {
     try {
+      if (!(await ensureAlarmPermissions())) return;
       await Bridge.triggerDemoAlarm(delaySeconds);
       Alert.alert(
         'Demo Alarm Armed',

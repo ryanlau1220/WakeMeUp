@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import {
+  createSafeWakePlan,
   isCalendarEventPayload,
   type CalendarEventPayload,
   type WakePlanResult,
@@ -31,11 +32,8 @@ const openai = new OpenAI({
 
 const MODEL = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
 
-export interface WakePreferences {
-  prepMinutes?: number;
-  travelMinutes?: number;
-  safetyMargin?: number;
-}
+export type { WakePreferences } from './wakePlan.js';
+import type { WakePreferences } from './wakePlan.js';
 
 export async function generateWakePlan({
   events,
@@ -107,7 +105,12 @@ Return ONLY a valid JSON object matching this schema:
   if (!content) {
     throw new Error('No response content received from agent model');
   }
-  return validateWakePlan(JSON.parse(content), events);
+  try {
+    return validateWakePlan(JSON.parse(content), events);
+  } catch {
+    console.warn('[Agent] Unsafe response; using deterministic safe timing.')
+    return createSafeWakePlan(events[0], preferences)
+  }
 }
 
 export async function chatWithAgent({

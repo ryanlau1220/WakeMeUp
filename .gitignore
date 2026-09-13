@@ -67,3 +67,4 @@ references/
 tmp/
 *.png
 !assets/**/*.png
+!public/**/*.png
