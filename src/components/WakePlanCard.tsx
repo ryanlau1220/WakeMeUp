@@ -13,6 +13,20 @@ function formatTime(millis: number) {
   return new Date(millis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatOneTimeAlarm(millis: number) {
+  const target = new Date(millis);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const isSameDay = (left: Date, right: Date) => left.toDateString() === right.toDateString();
+  const day = isSameDay(target, today)
+    ? 'Today'
+    : isSameDay(target, tomorrow)
+      ? 'Tomorrow'
+      : target.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${day} at ${formatTime(millis)}`;
+}
+
 export function WakePlanCard({ plan, isDraft, onApprove, onReject, onCancel }: Props) {
   return (
     <View style={[styles.card, isDraft ? styles.draft : styles.armed]}>
@@ -32,7 +46,9 @@ export function WakePlanCard({ plan, isDraft, onApprove, onReject, onCancel }: P
         {plan.eventTitle}
       </Text>
       <Text style={styles.event}>
-        {plan.calendarEventId ? `Starts ${formatTime(plan.eventStart)}` : 'One-time alarm'}
+        {plan.calendarEventId
+          ? `Starts ${formatTime(plan.eventStart)}`
+          : formatOneTimeAlarm(plan.firstAlarmAt)}
       </Text>
 
       <View style={styles.times}>
