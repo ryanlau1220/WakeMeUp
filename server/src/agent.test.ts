@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSafeWakePlan, validateWakePlan } from './wakePlan.js';
+import { applyRequestedFirstAlarm, createSafeWakePlan, validateWakePlan } from './wakePlan.js';
 
 const event = {
   id: 'class-1',
@@ -41,4 +41,13 @@ test('uses an immediate recovery alarm when preparation time has already elapsed
 
   assert.equal(plan.firstAlarmAt, now + 60_000)
   assert.deepEqual(validateWakePlan(plan, [soonEvent], now), plan)
+})
+
+test('honors a safe explicit alarm-time adjustment', () => {
+  const plan = createSafeWakePlan(event)
+  const requested = event.startMillis - 2 * 60 * 60_000
+  const adjusted = applyRequestedFirstAlarm(plan, requested, requested - 120_000)
+
+  assert.equal(adjusted.firstAlarmAt, requested)
+  assert.equal(adjusted.wakeObjectiveAt, requested + 5 * 60_000)
 })

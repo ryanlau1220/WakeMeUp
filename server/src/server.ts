@@ -52,7 +52,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Endpoint to generate structured wake plan from calendar context
 app.post('/api/plan/generate', async (req: Request, res: Response) => {
-  const { events, preferences, history, feedback } = req.body;
+  const { events, preferences, history, feedback, requestedFirstAlarmAt } = req.body;
   if (
     Array.isArray(events) &&
     events.length > 0 &&
@@ -65,7 +65,13 @@ app.post('/api/plan/generate', async (req: Request, res: Response) => {
   }
   try {
     console.log(`[Agent] Generating wake plan for ${events?.length || 0} events...`);
-    const plan = await generateWakePlan({ events, preferences, history, feedback });
+    const plan = await generateWakePlan({
+      events,
+      preferences,
+      history,
+      feedback,
+      requestedFirstAlarmAt,
+    });
     console.log(
       '[Agent] Proposed plan:',
       plan.eventTitle,

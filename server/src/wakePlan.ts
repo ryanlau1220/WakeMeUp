@@ -142,3 +142,25 @@ export function createSafeWakePlan(
     ],
   }
 }
+
+export function applyRequestedFirstAlarm(
+  plan: WakePlanResult,
+  requestedFirstAlarmAt: number,
+  now = Date.now(),
+): WakePlanResult {
+  if (
+    !Number.isSafeInteger(requestedFirstAlarmAt) ||
+    requestedFirstAlarmAt <= now + 60_000 ||
+    requestedFirstAlarmAt >= plan.eventStart ||
+    plan.eventStart - requestedFirstAlarmAt > 24 * 60 * 60_000
+  ) {
+    throw new Error('The requested alarm time must be a future time before this commitment.')
+  }
+
+  return {
+    ...plan,
+    firstAlarmAt: requestedFirstAlarmAt,
+    wakeObjectiveAt: Math.min(requestedFirstAlarmAt + 5 * 60_000, plan.eventStart - 1),
+    reasoningSummary: ['Used the requested alarm time', ...plan.reasoningSummary].slice(0, 3),
+  }
+}

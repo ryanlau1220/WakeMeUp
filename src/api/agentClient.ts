@@ -1,5 +1,6 @@
 import type { CalendarEvent, WakeHistoryItem, WakePlan } from '../native/WakeMeUpBridge';
 import { Bridge } from '../native/WakeMeUpBridge';
+import { requestedAlarmTime } from '../adjustment';
 
 let serverBaseUrl: string | null = null;
 
@@ -20,10 +21,13 @@ export async function requestAgentWakePlan(
   history: WakeHistoryItem[] = [],
   feedback?: string,
 ): Promise<WakePlan> {
+  const requestedFirstAlarmAt = feedback
+    ? requestedAlarmTime(feedback, events[0]?.startMillis)
+    : undefined;
   const response = await fetch(`${await getServerBaseUrl()}/api/plan/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ events, preferences, history, feedback }),
+    body: JSON.stringify({ events, preferences, history, feedback, requestedFirstAlarmAt }),
   });
 
   if (!response.ok) {

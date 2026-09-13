@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import {
+  applyRequestedFirstAlarm,
   createSafeWakePlan,
   isCalendarEventPayload,
   type CalendarEventPayload,
@@ -40,11 +41,13 @@ export async function generateWakePlan({
   preferences,
   history,
   feedback,
+  requestedFirstAlarmAt,
 }: {
   events: CalendarEventPayload[];
   preferences?: WakePreferences;
   history?: any[];
   feedback?: string;
+  requestedFirstAlarmAt?: number;
 }): Promise<WakePlanResult> {
   if (!Array.isArray(events) || events.length === 0 || !events.every(isCalendarEventPayload)) {
     throw new Error('Select an upcoming commitment before generating a wake plan.')
@@ -106,10 +109,16 @@ Return ONLY a valid JSON object matching this schema:
     throw new Error('No response content received from agent model');
   }
   try {
-    return validateWakePlan(JSON.parse(content), events);
+    const plan = validateWakePlan(JSON.parse(content), events);
+    return requestedFirstAlarmAt === undefined
+      ? plan
+      : applyRequestedFirstAlarm(plan, requestedFirstAlarmAt);
   } catch {
     console.warn('[Agent] Unsafe response; using deterministic safe timing.')
-    return validateWakePlan(createSafeWakePlan(events[0], preferences), events)
+    const plan = validateWakePlan(createSafeWakePlan(events[0], preferences), events)
+    return requestedFirstAlarmAt === undefined
+      ? plan
+      : applyRequestedFirstAlarm(plan, requestedFirstAlarmAt)
   }
 }
 
