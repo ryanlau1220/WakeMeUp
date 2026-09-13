@@ -3,8 +3,10 @@ package com.wakemeup.bridge
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.app.TimePickerDialog
 import android.net.Uri
 import android.provider.Settings
+import android.text.format.DateFormat
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.BatteryManager
@@ -15,6 +17,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.WritableMap
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -48,6 +51,39 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getAgentServerUrl(promise: Promise) {
         promise.resolve(BuildConfig.AGENT_SERVER_URL)
+    }
+
+    @ReactMethod
+    fun pickAlarmTime(hour: Int, minute: Int, promise: Promise) {
+        if (hour !in 0..23 || minute !in 0..59) {
+            promise.reject("INVALID_TIME", "Choose a valid time.")
+            return
+        }
+        val activity = reactContext.currentActivity ?: run {
+            promise.reject("TIME_PICKER_UNAVAILABLE", "Open Wake Me Up before choosing a time.")
+            return
+        }
+        activity.runOnUiThread {
+            val dialog = TimePickerDialog(
+                activity,
+                { _, selectedHour, selectedMinute ->
+                    promise.resolve(Arguments.createMap().apply {
+                        putInt("hour", selectedHour)
+                        putInt("minute", selectedMinute)
+                    })
+                },
+                hour,
+                minute,
+                DateFormat.is24HourFormat(activity),
+            )
+            dialog.setOnCancelListener {
+                promise.resolve(Arguments.createMap().apply {
+                    putInt("hour", hour)
+                    putInt("minute", minute)
+                })
+            }
+            dialog.show()
+        }
     }
 
     @ReactMethod
@@ -298,24 +334,7 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
             try {
                 val plan = db.wakePlanDao().getActivePlan()
                 withContext(Dispatchers.Main) {
-                    if (plan != null) {
-                        val map = Arguments.createMap().apply {
-                            putString("id", plan.id)
-                            putString("calendarEventId", plan.calendarEventId)
-                            putString("eventTitle", plan.eventTitle)
-                            putDouble("eventStart", plan.eventStart.toDouble())
-                            putDouble("wakeObjectiveAt", plan.wakeObjectiveAt.toDouble())
-                            putDouble("firstAlarmAt", plan.firstAlarmAt.toDouble())
-                            putInt("requiredSteps", plan.requiredSteps)
-                            putInt("gracePeriodSeconds", plan.gracePeriodSeconds)
-                            putInt("retryLimit", plan.retryLimit)
-                            putString("status", plan.status)
-                            putString("reasoningSummary", plan.reasoningSummary)
-                        }
-                        promise.resolve(map)
-                    } else {
-                        promise.resolve(null)
-                    }
+                    promise.resolve(plan?.let(::toPlanMap))
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -323,6 +342,35 @@ class WakeMeUpModule(private val reactContext: ReactApplicationContext) :
                 }
             }
         }
+    }
+
+    @ReactMethod
+    fun getScheduledPlans(promise: Promise) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val plans = db.wakePlanDao().getFutureScheduledPlans(System.currentTimeMillis())
+                val result = Arguments.createArray().apply {
+                    plans.forEach { pushMap(toPlanMap(it)) }
+                }
+                withContext(Dispatchers.Main) { promise.resolve(result) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { promise.reject("DB_ERROR", e.message, e) }
+            }
+        }
+    }
+
+    private fun toPlanMap(plan: WakePlanEntity): WritableMap = Arguments.createMap().apply {
+        putString("id", plan.id)
+        if (plan.calendarEventId == null) putNull("calendarEventId") else putString("calendarEventId", plan.calendarEventId)
+        putString("eventTitle", plan.eventTitle)
+        putDouble("eventStart", plan.eventStart.toDouble())
+        putDouble("wakeObjectiveAt", plan.wakeObjectiveAt.toDouble())
+        putDouble("firstAlarmAt", plan.firstAlarmAt.toDouble())
+        putInt("requiredSteps", plan.requiredSteps)
+        putInt("gracePeriodSeconds", plan.gracePeriodSeconds)
+        putInt("retryLimit", plan.retryLimit)
+        putString("status", plan.status)
+        putString("reasoningSummary", plan.reasoningSummary)
     }
 
     @ReactMethod

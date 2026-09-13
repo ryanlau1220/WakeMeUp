@@ -168,6 +168,16 @@ class WakeMeUpBridge {
     return await WakeMeUpModule.getActivePlan();
   }
 
+  async getScheduledPlans(): Promise<WakePlan[]> {
+    if (!WakeMeUpModule) return [];
+    return await WakeMeUpModule.getScheduledPlans();
+  }
+
+  async pickAlarmTime(hour: number, minute: number): Promise<{ hour: number; minute: number }> {
+    if (!WakeMeUpModule) return { hour, minute };
+    return await WakeMeUpModule.pickAlarmTime(hour, minute);
+  }
+
   async triggerDemoAlarm(delaySeconds = 15): Promise<{ id: string; firstAlarmAt: number }> {
     if (!WakeMeUpModule) throw new Error('Native module unavailable');
     return await WakeMeUpModule.triggerDemoAlarm(delaySeconds);

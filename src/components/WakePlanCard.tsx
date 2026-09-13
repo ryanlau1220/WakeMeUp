@@ -5,37 +5,35 @@ interface Props {
   plan: WakePlan;
   isDraft: boolean;
   onApprove: (plan: WakePlan) => void;
-  onAdjust: (plan: WakePlan) => void;
   onReject: (plan: WakePlan) => void;
-  onCancel?: (planId: string) => void;
+  onCancel?: (plan: WakePlan) => void;
 }
 
 function formatTime(millis: number) {
   return new Date(millis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function reasonsFor(plan: WakePlan): string[] {
-  if (Array.isArray(plan.reasoningSummary)) return plan.reasoningSummary;
-  if (typeof plan.reasoningSummary !== 'string') return [];
-  try {
-    return plan.reasoningSummary.startsWith('[')
-      ? JSON.parse(plan.reasoningSummary)
-      : [plan.reasoningSummary];
-  } catch {
-    return [];
-  }
-}
-
-export function WakePlanCard({ plan, isDraft, onApprove, onAdjust, onReject, onCancel }: Props) {
-  const reasons = reasonsFor(plan);
-
+export function WakePlanCard({ plan, isDraft, onApprove, onReject, onCancel }: Props) {
   return (
     <View style={[styles.card, isDraft ? styles.draft : styles.armed]}>
-      <Text style={styles.eyebrow}>{isDraft ? 'Wake plan' : 'Alarm set'}</Text>
+      <View style={styles.cardTop}>
+        <Text style={styles.eyebrow}>{isDraft ? 'Wake plan' : 'Alarm set'}</Text>
+        {!isDraft && (
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => onCancel?.(plan)}
+            accessibilityLabel={`Cancel ${plan.eventTitle}`}
+          >
+            <Text style={styles.cancelText}>×</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <Text style={styles.title} numberOfLines={3}>
         {plan.eventTitle}
       </Text>
-      <Text style={styles.event}>Starts {formatTime(plan.eventStart)}</Text>
+      <Text style={styles.event}>
+        {plan.calendarEventId ? `Starts ${formatTime(plan.eventStart)}` : 'One-time alarm'}
+      </Text>
 
       <View style={styles.times}>
         <View style={styles.timeRow}>
@@ -53,28 +51,15 @@ export function WakePlanCard({ plan, isDraft, onApprove, onAdjust, onReject, onC
       </View>
 
       <Text style={styles.method}>{plan.requiredSteps} steps · QR if needed</Text>
-      {reasons.map((reason, index) => (
-        <Text key={`${index}-${reason}`} style={styles.reason}>
-          {reason}
-        </Text>
-      ))}
-
-      {isDraft ? (
+      {isDraft && (
         <View style={styles.actions}>
           <TouchableOpacity style={styles.primary} onPress={() => onApprove(plan)}>
-            <Text style={styles.primaryText}>Set alarm</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.textButton} onPress={() => onAdjust(plan)}>
-            <Text style={styles.textButtonText}>Change</Text>
+            <Text style={styles.primaryText}>Approve</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.textButton} onPress={() => onReject(plan)}>
-            <Text style={styles.rejectText}>Not now</Text>
+            <Text style={styles.rejectText}>Reject</Text>
           </TouchableOpacity>
         </View>
-      ) : (
-        <TouchableOpacity onPress={() => onCancel?.(plan.id)} style={styles.cancel}>
-          <Text style={styles.cancelText}>Cancel alarm</Text>
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -90,6 +75,7 @@ const styles = StyleSheet.create({
   },
   draft: { borderWidth: 1, borderColor: '#f0a36d' },
   armed: { borderWidth: 1, borderColor: '#5b7660' },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   eyebrow: {
     color: '#f0a36d',
     fontSize: 13,
@@ -115,8 +101,7 @@ const styles = StyleSheet.create({
   },
   timeLabel: { color: '#a6afa3', fontSize: 13, marginBottom: 3 },
   time: { color: '#fff9f0', fontFamily: 'serif', fontSize: 34, fontWeight: '800' },
-  method: { color: '#d8ded4', fontSize: 14, marginBottom: 12 },
-  reason: { color: '#a6afa3', fontSize: 13, lineHeight: 19 },
+  method: { color: '#d8ded4', fontSize: 14 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginTop: 22 },
   primary: {
     backgroundColor: '#f0a36d',
@@ -128,6 +113,14 @@ const styles = StyleSheet.create({
   textButton: { paddingVertical: 12 },
   textButtonText: { color: '#fff9f0', fontSize: 14, fontWeight: '700' },
   rejectText: { color: '#a6afa3', fontSize: 14, fontWeight: '700' },
-  cancel: { marginTop: 20, alignSelf: 'flex-start' },
-  cancelText: { color: '#f0a36d', fontSize: 14, fontWeight: '700' },
+  cancelButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#7a4e43',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelText: { color: '#f0a36d', fontSize: 25, fontWeight: '400', lineHeight: 28 },
 });
