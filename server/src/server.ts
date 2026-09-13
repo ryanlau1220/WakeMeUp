@@ -4,6 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import { chatWithAgent, generateWakePlan } from './agent.js';
+import { isCalendarEventPayload } from './wakePlan.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,8 +29,18 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Endpoint to generate structured wake plan from calendar context
 app.post('/api/plan/generate', async (req: Request, res: Response) => {
+  const { events, preferences, history, feedback } = req.body;
+  if (
+    Array.isArray(events) &&
+    events.length > 0 &&
+    events.every(isCalendarEventPayload) &&
+    events[0].startMillis <= Date.now() + 2 * 60_000
+  ) {
+    return res.status(422).json({
+      error: 'This commitment is too soon to plan for. Choose a later event or use Test alarm.',
+    });
+  }
   try {
-    const { events, preferences, history, feedback } = req.body;
     console.log(`[Agent] Generating wake plan for ${events?.length || 0} events...`);
     const plan = await generateWakePlan({ events, preferences, history, feedback });
     console.log(

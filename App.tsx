@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -293,7 +294,15 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.appName}>wake me up</Text>
+            <View style={styles.brand}>
+              <Image
+                source={require('./assets/branding/wake-me-up-favicon.png')}
+                style={styles.logo}
+              />
+              <Text style={styles.appName} adjustsFontSizeToFit numberOfLines={1}>
+                Wake Me Up
+              </Text>
+            </View>
             <TouchableOpacity
               style={styles.settingsButton}
               onPress={() => {
@@ -540,6 +549,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 32,
+    width: '100%',
   },
   header: {
     flexDirection: 'row',
@@ -551,9 +561,21 @@ const styles = StyleSheet.create({
   appName: {
     color: '#fff9f0',
     fontFamily: 'serif',
-    fontSize: 30,
+    fontSize: 27,
     fontWeight: '800',
     letterSpacing: -1,
+    flexShrink: 1,
+  },
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  logo: {
+    width: 30,
+    height: 30,
+    marginRight: 9,
   },
   settingsButton: {
     borderWidth: 1,
@@ -561,6 +583,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    marginLeft: 16,
   },
   settingsButtonText: {
     color: '#d8ded4',

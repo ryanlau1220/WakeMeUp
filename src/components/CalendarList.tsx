@@ -52,11 +52,17 @@ export function CalendarList({ events, onRefresh, onGeneratePlan }: Props) {
           <Text style={styles.refresh}>↻</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.time}>
+      <Text style={styles.time} adjustsFontSizeToFit numberOfLines={1}>
         {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
-      <Text style={styles.title}>{event.title}</Text>
-      {event.location ? <Text style={styles.location}>{event.location}</Text> : null}
+      <Text style={styles.title} numberOfLines={2}>
+        {event.title}
+      </Text>
+      {event.location ? (
+        <Text style={styles.location} numberOfLines={1}>
+          {event.location}
+        </Text>
+      ) : null}
       <TouchableOpacity
         style={styles.action}
         onPress={() => onGeneratePlan(event)}
@@ -70,7 +76,13 @@ export function CalendarList({ events, onRefresh, onGeneratePlan }: Props) {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#f5efe6', borderRadius: 28, padding: 24, marginBottom: 18 },
+  card: {
+    backgroundColor: '#f5efe6',
+    borderRadius: 28,
+    padding: 24,
+    marginBottom: 18,
+    width: '100%',
+  },
   topLine: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -86,8 +98,8 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     letterSpacing: -2,
   },
-  title: { color: '#1f2621', fontSize: 22, fontWeight: '700', marginTop: 3 },
-  location: { color: '#776f65', fontSize: 14, marginTop: 5 },
+  title: { color: '#1f2621', fontSize: 22, fontWeight: '700', marginTop: 3, flexShrink: 1 },
+  location: { color: '#776f65', fontSize: 14, marginTop: 5, flexShrink: 1 },
   action: {
     backgroundColor: '#e5583d',
     borderRadius: 17,

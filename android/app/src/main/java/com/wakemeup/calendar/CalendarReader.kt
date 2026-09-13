@@ -34,6 +34,10 @@ data class CalendarEventItem(
 
 class CalendarReader(private val context: Context) {
 
+    companion object {
+        private const val MINIMUM_PLANNING_LEAD_MS = 2 * 60 * 1000L
+    }
+
     fun hasCalendarPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context,
@@ -93,7 +97,7 @@ class CalendarReader(private val context: Context) {
 
                     val hour = Calendar.getInstance().apply { timeInMillis = begin }
                         .get(Calendar.HOUR_OF_DAY)
-                    if (!allDay && hour in 5..11) {
+                    if (!allDay && begin > now + MINIMUM_PLANNING_LEAD_MS && hour in 5..11) {
                         events.add(
                             CalendarEventItem(
                                 id = id,
