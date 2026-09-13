@@ -44,9 +44,9 @@ type AppTab = 'home' | 'alarms' | 'recent' | 'settings';
 type TabIconName = 'history' | 'alarm' | 'home' | 'settings';
 
 const tabs: { id: AppTab; label: string; icon: TabIconName }[] = [
+  { id: 'home', label: 'Home', icon: 'home' },
   { id: 'recent', label: 'Recent', icon: 'history' },
   { id: 'alarms', label: 'Alarms', icon: 'alarm' },
-  { id: 'home', label: 'Home', icon: 'home' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
@@ -308,13 +308,9 @@ function WakeMeUpApp() {
       setIsQrModalOpen(true);
     });
 
-    const subEscalated = Bridge.onEscalated((data) => {
+    const subEscalated = Bridge.onEscalated(() => {
       if (!wakeSettingsRef.current.telegramEscalationEnabled) return;
-      void sendOrQueueEscalation(
-        data.planId,
-        data.eventTitle,
-        `Wake plan ${data.planId} remained unverified after all alarm retries.`,
-      );
+      void retryPendingEscalations();
     });
 
     return () => {
@@ -341,11 +337,6 @@ function WakeMeUpApp() {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const sendOrQueueEscalation = async (planId: string, planTitle: string, message: string) => {
-    const result = await sendTelegramEscalation(planTitle, message);
-    if (!result.ok) await Bridge.queueEscalation(planId, planTitle, message);
   };
 
   const retryPendingEscalations = async () => {
@@ -1285,17 +1276,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 35,
   },
-  historyIcon: {
-    fontSize: 32,
-    fontWeight: '700',
-    lineHeight: 32,
-    transform: [{ translateY: -1 }],
-  },
   historyIconFrame: {
-    width: 30,
-    height: 30,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  historyIcon: {
+    fontSize: 36,
+    fontWeight: '700',
+    includeFontPadding: false,
+    lineHeight: 36,
+    textAlignVertical: 'center',
+    transform: [{ translateY: -1 }],
   },
   clockIcon: {
     width: 30,

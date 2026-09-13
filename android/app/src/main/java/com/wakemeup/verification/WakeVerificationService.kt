@@ -18,6 +18,7 @@ import com.wakemeup.R
 import com.wakemeup.alarm.AlarmScheduler
 import com.wakemeup.bridge.WakeMeUpEventEmitter
 import com.wakemeup.db.AppDatabase
+import com.wakemeup.db.PendingEscalationEntity
 import com.wakemeup.db.WakeOutcomeEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -229,6 +230,22 @@ class WakeVerificationService : Service() {
             }
             if (!retryScheduled) {
                 db.wakePlanDao().updateStatus(planId, "FAILED")
+                val escalationEnabled = getSharedPreferences("wake_me_up_settings", Context.MODE_PRIVATE)
+                    .getBoolean("telegramEscalationEnabled", false)
+                if (escalationEnabled) {
+                    try {
+                        db.pendingEscalationDao().insert(
+                            PendingEscalationEntity(
+                                id = UUID.randomUUID().toString(),
+                                wakePlanId = planId,
+                                planTitle = plan?.eventTitle ?: "Wake objective",
+                                message = "Wake plan $planId remained unverified after all alarm attempts.",
+                            ),
+                        )
+                    } catch (error: Exception) {
+                        Log.e("WakeVerification", "Could not queue Telegram escalation", error)
+                    }
+                }
             }
 
             WakeMeUpEventEmitter.sendEvent(if (retryScheduled) "RETRYING" else "QR_REQUIRED", mapOf(
