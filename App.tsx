@@ -150,6 +150,7 @@ function WakeMeUpApp() {
   const escalationRetryInFlight = useRef(false);
   const successScale = useRef(new Animated.Value(0)).current;
   const successSpin = useRef(new Animated.Value(0)).current;
+  const adjustmentSpin = useRef(new Animated.Value(0)).current;
   const [wakeHistory, setWakeHistory] = useState<
     Awaited<ReturnType<typeof Bridge.getRecentWakeHistory>>
   >([]);
@@ -226,6 +227,22 @@ function WakeMeUpApp() {
       clearTimeout(timer);
     };
   }, [confirmationPlan, successScale, successSpin]);
+
+  useEffect(() => {
+    if (!isAdjustModalOpen || !isProcessing) return;
+
+    adjustmentSpin.setValue(0);
+    const animation = Animated.loop(
+      Animated.timing(adjustmentSpin, {
+        toValue: 1,
+        duration: 700,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [adjustmentSpin, isAdjustModalOpen, isProcessing]);
 
   const requestPermissions = async () => {
     if (Platform.OS !== 'android') return;
@@ -932,10 +949,16 @@ function WakeMeUpApp() {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Adjust Wake Plan</Text>
               <Text style={styles.inputLabel}>What should change?</Text>
-              <TextInput style={styles.input} value={adjustNote} onChangeText={setAdjustNote} />
+              <TextInput
+                style={styles.input}
+                value={adjustNote}
+                onChangeText={setAdjustNote}
+                editable={!isProcessing}
+              />
               <View style={styles.modalActions}>
                 <TouchableOpacity
-                  style={[styles.modalBtn, styles.modalSubmit]}
+                  disabled={isProcessing}
+                  style={[styles.modalBtn, styles.modalSubmit, isProcessing && styles.modalBusy]}
                   onPress={async () => {
                     const event = events.find((item) => item.id === draftPlan?.calendarEventId);
                     if (!draftPlan || !event) return;
@@ -961,9 +984,31 @@ function WakeMeUpApp() {
                     }
                   }}
                 >
-                  <Text style={styles.modalSubmitText}>Apply Adjustment</Text>
+                  {isProcessing ? (
+                    <View style={styles.adjustingContent}>
+                      <Animated.View
+                        style={[
+                          styles.adjustingSpinner,
+                          {
+                            transform: [
+                              {
+                                rotate: adjustmentSpin.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: ['0deg', '360deg'],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}
+                      />
+                      <Text style={styles.modalSubmitText}>Adjusting</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.modalSubmitText}>Apply Adjustment</Text>
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity
+                  disabled={isProcessing}
                   style={[styles.modalBtn, styles.modalClose]}
                   onPress={() => setIsAdjustModalOpen(false)}
                 >
@@ -1439,6 +1484,22 @@ const styles = StyleSheet.create({
   },
   modalSubmit: {
     backgroundColor: '#f0a36d',
+  },
+  modalBusy: {
+    opacity: 0.82,
+  },
+  adjustingContent: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 7,
+  },
+  adjustingSpinner: {
+    borderColor: 'rgba(32, 40, 33, 0.25)',
+    borderRadius: 8,
+    borderTopColor: '#202821',
+    borderWidth: 2,
+    height: 16,
+    width: 16,
   },
   settingsSave: {
     flex: 0,
